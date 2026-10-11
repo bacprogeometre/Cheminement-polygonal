@@ -1,0 +1,1732 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Simulateur de cheminement polygonal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Share+Tech+Mono&display=swap">
+<style>
+/* Mise en page : bandeau + étapes en haut ; colonne de travail à gauche, plan et données collants à droite (une colonne sur mobile). */
+:root{
+  --bg:#e9edf0; --panel:#fbfcfd; --sunk:#f0f3f5; --ink:#16212a; --muted:#566673; --line:#cfd8df;
+  --accent:#d9481a; --accent-soft:#fbe4d9; --on-accent:#ffffff;
+  --known:#1b5a9e; --brute:#2a7db5; --ok:#1d7f45; --ok-soft:#dcf1e4; --bad:#b8322a; --bad-soft:#f9e0dc; --warn:#94650f;
+  --map-bg:#fdfefe; --map-grid:#b4c2cc; --jalon-w:#ffffff;
+  --housing:#252c33; --housing-2:#333c45; --housing-ink:#dfe5ea; --lcd-bg:#b6c59e; --lcd-ink:#16220d; --lcd-dim:#66765a;
+  --f-display:"Barlow Condensed","Arial Narrow",sans-serif;
+  --f-body:"Barlow","Segoe UI",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",Consolas,"Courier New",monospace;
+  --f-lcd:"Share Tech Mono","Lucida Console",monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0f151a; --panel:#161e25; --sunk:#1c262e; --ink:#e2e8ed; --muted:#94a3af; --line:#2b3741;
+    --accent:#f0743f; --accent-soft:#3b2318; --on-accent:#1b0f09;
+    --known:#72adf2; --brute:#62b6ec; --ok:#55c987; --ok-soft:#163226; --bad:#f2746b; --bad-soft:#3b1d1b; --warn:#e2ab4d;
+    --map-bg:#121a20; --map-grid:#2f3f4b; --jalon-w:#e8ecef; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0f151a; --panel:#161e25; --sunk:#1c262e; --ink:#e2e8ed; --muted:#94a3af; --line:#2b3741;
+  --accent:#f0743f; --accent-soft:#3b2318; --on-accent:#1b0f09;
+  --known:#72adf2; --brute:#62b6ec; --ok:#55c987; --ok-soft:#163226; --bad:#f2746b; --bad-soft:#3b1d1b; --warn:#e2ab4d;
+  --map-bg:#121a20; --map-grid:#2f3f4b; --jalon-w:#e8ecef; color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 var(--f-body)}
+button,input,select{font:inherit;color:inherit}
+h1,h2,h3{font-family:var(--f-display);text-wrap:balance;margin:0}
+h2{font-size:1.45rem;font-weight:600;letter-spacing:.01em}
+h3{font-size:1.1rem;font-weight:600;margin-block:18px 8px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+small{font-size:.75rem}
+code,.mono{font-family:var(--f-mono)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- Bandeau ---------- */
+.top{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:center;justify-content:space-between;padding:12px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+.brand{display:flex;gap:12px;align-items:center;min-width:0}
+.jalon{flex:none;width:8px;height:46px;border-radius:2px;background:repeating-linear-gradient(to bottom,var(--accent) 0 11.5px,var(--jalon-w) 11.5px 23px);box-shadow:0 0 0 1px var(--line)}
+h1{font-size:1.7rem;font-weight:700;line-height:1;text-transform:uppercase;letter-spacing:.03em}
+.sub{margin:3px 0 0;color:var(--muted);font-size:.85rem}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{display:flex;flex-direction:column;justify-content:center;padding:4px 12px;border:1px solid var(--line);border-radius:6px;min-width:86px;background:var(--panel)}
+.chip b{font:600 1.1rem/1.25 var(--f-mono);font-variant-numeric:tabular-nums}
+.chip small{font-size:.66rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted)}
+.chip.mode b{font-family:var(--f-display);font-size:1rem;text-transform:uppercase;letter-spacing:.05em}
+.chip.exam{border-color:var(--warn)} .chip.exam b{color:var(--warn)}
+.chip.note{border-color:var(--accent)}
+
+/* ---------- Étapes ---------- */
+.stepper{display:flex;gap:4px;overflow-x:auto;padding:8px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+.stepper button{flex:none;display:flex;align-items:center;gap:8px;padding:6px 12px 6px 6px;border:1px solid transparent;border-radius:6px;background:none;cursor:pointer}
+.stepper button:hover:not(:disabled){background:var(--sunk)}
+.stepper button:disabled{opacity:.42;cursor:not-allowed}
+.stepper .sn{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--line);font:600 .8rem var(--f-mono)}
+.stepper .st{font:600 .95rem var(--f-display);text-transform:uppercase;letter-spacing:.05em}
+.stepper small{color:var(--muted);font-family:var(--f-mono);font-size:.7rem}
+.stepper button.cur{border-color:var(--accent);background:var(--accent-soft)}
+.stepper button.cur .sn{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.stepper button.done .sn{border-color:var(--ok);color:var(--ok)}
+
+/* ---------- Grille principale ---------- */
+.app{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,430px);gap:20px;max-width:1560px;margin:0 auto;padding:20px 16px 48px}
+@media (max-width:1080px){.app{grid-template-columns:minmax(0,1fr)}}
+.work{min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px}
+@media (max-width:520px){.work{padding:14px 12px}}
+.side{display:flex;flex-direction:column;gap:14px;min-width:0}
+@media (min-width:1081px){.side{position:sticky;top:12px;align-self:start;max-height:calc(100vh - 24px);overflow:auto}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+.card h2{font-size:1.05rem;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px}
+.cardhead{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.cardhead span{color:var(--muted);font-size:.78rem}
+.stephead{display:flex;flex-direction:column;gap:4px;margin-bottom:14px}
+.stephead p{margin:0;color:var(--muted);max-width:70ch}
+
+/* ---------- Boutons ---------- */
+.btn,.actions button,.row-actions button,.stationbar button,.softkeys button,.codebox button,.manual button{cursor:pointer;border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:7px 14px;font-weight:500}
+.actions button:hover,.row-actions button:hover,.stationbar button:hover:not(:disabled),.codebox button:hover,.manual button:hover{border-color:var(--ink)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+button.primary:hover{filter:brightness(1.06)}
+button.ghost{background:transparent}
+button.armed{border-color:var(--bad)!important;color:var(--bad)}
+button:disabled{opacity:.45;cursor:not-allowed}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px;align-items:center}
+.row-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;align-items:center}
+.note{color:var(--muted);font-size:.85rem;margin:6px 0 0}
+
+/* ---------- Formulaire scénario ---------- */
+.formgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+fieldset{border:0;margin:0;padding:0;min-width:0}
+legend,.lbl{display:block;font:600 .74rem var(--f-body);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:5px}
+.seg{display:flex;flex-wrap:wrap}
+.seg>legend{width:100%}
+.seg label{flex:1 1 auto;cursor:pointer}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg span{display:block;text-align:center;padding:7px 12px;border:1px solid var(--line);margin-left:-1px;background:var(--panel)}
+.seg label:first-of-type span{border-radius:6px 0 0 6px;margin-left:0}
+.seg label:last-of-type span{border-radius:0 6px 6px 0}
+.seg input:checked+span{background:var(--ink);color:var(--panel);border-color:var(--ink);font-weight:600}
+.seg input:focus-visible+span{outline:2px solid var(--accent);outline-offset:1px}
+.fl{display:flex;flex-direction:column}
+.fl input,.codebox input,.manual input{border:1px solid var(--line);border-radius:6px;padding:7px 10px;background:var(--panel);min-width:0;font-family:var(--f-mono)}
+.codebox{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-top:20px;padding:14px;background:var(--sunk);border-radius:8px}
+.codebox>div{display:flex;flex-wrap:wrap;gap:8px;align-items:center;min-width:0}
+.codebox .lbl{width:100%;margin:0}
+.codebox code{font-size:1.05rem;font-weight:600;padding:5px 10px;background:var(--panel);border:1px dashed var(--line);border-radius:6px;word-break:break-all;max-width:100%}
+.codebox input{flex:1 1 140px}
+.codebox .note{grid-column:1/-1;margin:0}
+.manual{margin-top:16px;border:1px solid var(--line);border-radius:8px;padding:10px 14px}
+.manual summary{cursor:pointer;font:600 1rem var(--f-display);text-transform:uppercase;letter-spacing:.05em}
+.mgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px 14px;margin-top:12px}
+.mgrid .grp{grid-column:1/-1;font:600 .8rem var(--f-body);text-transform:uppercase;letter-spacing:.07em;color:var(--accent);margin-top:6px;border-bottom:1px solid var(--line);padding-bottom:3px}
+.mgrid label{display:flex;flex-direction:column;font-size:.82rem;color:var(--muted);gap:3px}
+.err{color:var(--bad);font-weight:500}
+.params{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:18px}
+.params div{padding:10px 12px;border:1px solid var(--line);border-radius:8px}
+.params b{display:block;font-family:var(--f-mono);font-weight:600}
+
+/* ---------- Terrain : oculaire + station ---------- */
+.stationbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:14px}
+.stname{font:700 1.5rem var(--f-display);text-transform:uppercase;letter-spacing:.03em;text-align:center}
+.stname small{display:block;font:500 .8rem var(--f-body);text-transform:none;letter-spacing:0;color:var(--muted)}
+.instrument{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+.ocwrap{flex:0 1 420px;display:flex;flex-direction:column;align-items:center;gap:10px;min-width:0}
+.oclabel{display:flex;gap:10px;align-items:center;font:600 1rem var(--f-display);text-transform:uppercase;letter-spacing:.04em}
+.face{padding:1px 8px;border-radius:4px;background:var(--ink);color:var(--panel);font-family:var(--f-mono);font-size:.85rem}
+#ocular{width:min(300px,100%);aspect-ratio:1;max-width:100%;border-radius:50%;background:#0b0e11;box-shadow:0 0 0 6px #1b2026,0 0 0 8px var(--line);cursor:crosshair;touch-action:none}
+.flip{animation:flip .5s ease}
+@keyframes flip{0%{transform:scaleX(1)}50%{transform:scaleX(.05) rotate(4deg)}100%{transform:scaleX(1)}}
+@media (prefers-reduced-motion:reduce){.flip{animation:none}}
+/* Oculaire entouré des vis de fin pointé (appui long = mouvement continu) */
+.ocstage{display:grid;grid-template-columns:48px minmax(0,300px) 48px;grid-template-rows:44px auto 44px;gap:6px;align-items:center;justify-items:center;width:100%;max-width:420px}
+.ocstage canvas{grid-column:2;grid-row:2}
+.ocstage button{width:48px;height:44px;border:1px solid var(--line);background:var(--sunk);border-radius:8px;cursor:pointer;font-size:1.05rem;user-select:none;-webkit-user-select:none}
+.ocstage button:hover{border-color:var(--ink)}
+.ocstage button:active{background:var(--accent-soft);border-color:var(--accent)}
+.ocstage .u{grid-column:2;grid-row:1;width:76px}.ocstage .d{grid-column:2;grid-row:3;width:76px}
+.ocstage .l{grid-column:1;grid-row:2;height:76px}.ocstage .r{grid-column:3;grid-row:2;height:76px}
+#btnPas{cursor:pointer;border:1px solid var(--line);background:var(--panel);border-radius:20px;padding:5px 14px;font:500 .82rem var(--f-mono)}
+#btnPas[aria-pressed="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+.ochint{font-size:.8rem;color:var(--muted);text-align:center;margin:0;max-width:34ch}
+.housing{flex:1 1 330px;min-width:0;max-width:480px;background:linear-gradient(180deg,var(--housing-2),var(--housing));color:var(--housing-ink);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:12px;box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+.housing .brandline{display:flex;justify-content:space-between;font:600 .72rem var(--f-body);letter-spacing:.14em;text-transform:uppercase;opacity:.75}
+.lcd{background:var(--lcd-bg);color:var(--lcd-ink);border-radius:6px;padding:10px 14px;font-family:var(--f-lcd);box-shadow:inset 0 2px 6px rgba(0,0,0,.35);font-variant-numeric:tabular-nums}
+.lrow{display:grid;grid-template-columns:3.2em 1fr 2.6em;align-items:baseline;gap:6px;font-size:1.45rem;line-height:1.35}
+.lrow .lk{font-size:1rem}
+.lrow .lv{text-align:right;letter-spacing:.04em}
+.lrow .lu{font-size:.85rem;color:var(--lcd-dim)}
+.lrow.top,.lrow.foot{display:flex;justify-content:space-between;font-size:.85rem;gap:8px;flex-wrap:wrap}
+.lrow.top{border-bottom:1px solid var(--lcd-dim);padding-bottom:4px;margin-bottom:4px}
+.lrow.foot{border-top:1px solid var(--lcd-dim);padding-top:4px;margin-top:4px;color:var(--lcd-ink)}
+.softkeys{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.softkeys button{background:#14191e!important;color:var(--housing-ink)!important;border:1px solid #46505a!important;font:600 .9rem var(--f-mono)!important;padding:9px 6px!important;border-radius:6px}
+.softkeys button:hover{border-color:#aab5bf!important}
+.softkeys button.hot{border-color:#f0a35e!important;color:#ffd4a8!important}
+.targets{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.targets button{cursor:pointer;border-radius:6px;border:1px solid #46505a;background:transparent;color:var(--housing-ink);padding:7px 8px;font-size:.85rem;text-align:left}
+.targets button.on{background:#e9eef2;color:#16212a;border-color:#e9eef2}
+.targets b{font-family:var(--f-mono)}
+.checklist{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.ck{font:500 .72rem var(--f-mono);text-align:center;padding:5px 2px;border-radius:5px;border:1px dashed #56616c;color:#aeb8c1}
+.ck.done{border-style:solid;border-color:#5fbf86;color:#a9e9c2}
+.ck.cur{border-color:#f0a35e;color:#ffd4a8}
+
+/* ---------- Tableaux ---------- */
+.tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;max-width:100%}
+table{border-collapse:collapse;width:100%;font-size:.86rem}
+th,td{padding:5px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle;white-space:nowrap}
+thead th{position:sticky;top:0;background:var(--sunk);font:600 .74rem var(--f-body);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+tbody th{font:600 .95rem var(--f-display);letter-spacing:.03em}
+th small,td small{display:block;color:var(--muted);font-family:var(--f-mono);font-weight:400;font-size:.7rem}
+.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;text-align:right}
+tr.grp td,tr.grp th{border-top:2px solid var(--line)}
+tr.here{background:var(--accent-soft)}
+tr.clickable{cursor:pointer}
+tr.clickable:hover{background:var(--sunk)}
+tfoot td{background:var(--sunk);font-weight:600}
+.tbl-sm td,.tbl-sm th{padding:4px 6px;font-size:.8rem}
+
+/* ---------- Champs de calcul ---------- */
+.fw{display:inline-flex;align-items:center;gap:3px}
+.fld{width:8.6em;padding:4px 6px;border:1px solid var(--line);border-radius:5px;background:var(--panel);font:500 .86rem var(--f-mono);text-align:right;font-variant-numeric:tabular-nums}
+.fld:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 2px var(--accent-soft)}
+.fld.ok{border-color:var(--ok);background:var(--ok-soft)}
+.fld.bad{border-color:var(--bad);background:var(--bad-soft)}
+.fld.rev{border-style:dashed;color:var(--muted)}
+.fld.filled{border-color:var(--ink)}
+.fld:disabled{opacity:1}
+.mk{display:inline-grid;place-items:center;width:20px;font-size:.85rem;font-weight:700}
+.mk.ok{color:var(--ok)} .mk.bad{color:var(--bad)} .mk.rev{color:var(--muted)}
+.mk button{width:20px;height:20px;padding:0;border-radius:50%;border:1px solid var(--bad);color:var(--bad);background:var(--panel);cursor:pointer;font:700 .75rem var(--f-mono)}
+.hint{background:var(--sunk);border-radius:8px;padding:10px 14px;margin-bottom:14px}
+.hint summary{cursor:pointer;font:600 .95rem var(--f-display);text-transform:uppercase;letter-spacing:.06em;color:var(--accent)}
+.hint ul{margin:8px 0 0;padding-left:20px}
+.hint li{margin-bottom:3px}
+.hint p{margin:6px 0 0;font-size:.85rem;color:var(--muted)}
+.refgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin-bottom:16px}
+.refcell{border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:5px}
+.refcell .math{font-family:var(--f-mono);font-size:.8rem;color:var(--muted)}
+.fbox{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center;margin-block:14px;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:var(--sunk)}
+.fbox .fi{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.fbox .fi>span:first-child{font-weight:600}
+.verdict{display:inline-block;font:600 .72rem var(--f-body);text-transform:uppercase;letter-spacing:.07em;padding:2px 8px;border-radius:20px;border:1px solid var(--line);color:var(--muted)}
+.verdict.in{border-color:var(--ok);color:var(--ok);background:var(--ok-soft)}
+.verdict.out{border-color:var(--bad);color:var(--bad);background:var(--bad-soft)}
+
+/* ---------- Carte ---------- */
+#map{display:block;width:100%;border-radius:6px;border:1px solid var(--line);background:var(--map-bg)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:.76rem;color:var(--muted)}
+.legend i{display:inline-block;width:18px;height:0;border-top:2px solid;vertical-align:middle;margin-right:5px}
+.lg-cro{border-top-style:dashed!important;border-color:var(--muted)} .lg-bru{border-color:var(--brute)} .lg-com{border-color:var(--accent)} .lg-kn{border-color:var(--known)}
+.clos{display:grid;grid-template-columns:auto 1fr auto;gap:6px 10px;align-items:center;font-size:.85rem}
+.clos .num{text-align:right}
+
+/* ---------- Bilan ---------- */
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+.tile{border:1px solid var(--line);border-radius:8px;padding:10px 14px}
+.tile b{display:block;font:600 1.7rem/1.2 var(--f-mono)}
+.tile small{text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.tile.main{border-color:var(--accent);background:var(--accent-soft)}
+.errlist{margin:0;padding-left:20px;font-size:.86rem}
+.errlist li{margin-bottom:3px}
+.errlist code{font-size:.82rem}
+
+/* ---------- Notification ---------- */
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);opacity:0;pointer-events:none;background:var(--ink);color:var(--panel);padding:9px 16px;border-radius:8px;font-weight:500;transition:.25s;max-width:calc(100% - 32px);z-index:10;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast.ok{background:var(--ok);color:#fff}
+.toast.bad{background:var(--bad);color:#fff}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+
+/* =====================================================================
+   VERSION MOBILE ET TABLETTE
+   - ≤ 1080 px : plan et fermetures dans un panneau coulissant (bouton flottant), étapes collantes
+   - ≤ 760 px  : tableaux transformés en fiches, commandes agrandies, en-tête compact
+   - écran tactile : champs en 16 px (pas de zoom iOS) et bouton ± (le clavier décimal n'a pas de signe moins)
+   ===================================================================== */
+button{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+.m-only{display:none}
+.pm{display:none;width:32px;height:32px;padding:0;border:1px solid var(--line);border-radius:6px;background:var(--sunk);font:600 1rem var(--f-mono);cursor:pointer;flex:none}
+.fab,.sheethead{display:none}
+.backdrop{position:fixed;inset:0;background:rgba(8,12,16,.45);z-index:25}
+@media (pointer:coarse){
+  .pm{display:inline-grid;place-items:center}
+  .fld{font-size:16px;padding:7px 8px}
+  .ocstage .u,.ocstage .d{height:48px}
+}
+@media (min-width:1081px){.backdrop{display:none!important}}
+@media (max-width:1080px){
+  .stepper{position:sticky;top:env(safe-area-inset-top,0px);z-index:15}
+  .fab{display:flex;align-items:center;gap:8px;position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:20;padding:12px 18px;border:0;border-radius:28px;background:var(--ink);color:var(--panel);font:600 .95rem var(--f-display);text-transform:uppercase;letter-spacing:.05em;box-shadow:0 6px 18px rgba(0,0,0,.28);cursor:pointer}
+  .fab svg{width:18px;height:18px}
+  .side{position:fixed;left:0;right:0;bottom:0;z-index:30;max-height:88vh;overflow:auto;overscroll-behavior:contain;background:var(--bg);border-radius:16px 16px 0 0;padding:10px 16px calc(18px + env(safe-area-inset-bottom,0px));transform:translateY(105%);visibility:hidden;transition:transform .28s ease,visibility .28s;box-shadow:0 -10px 30px rgba(0,0,0,.25)}
+  body.sheet .side{transform:none;visibility:visible}
+  body.sheet{overflow:hidden}
+  .sheethead{display:flex;justify-content:space-between;align-items:center;position:sticky;top:-10px;z-index:1;background:var(--bg);padding:14px 0 8px}
+  .sheethead::before{content:"";position:absolute;left:50%;top:4px;width:40px;height:4px;border-radius:2px;background:var(--line);transform:translateX(-50%)}
+  .sheethead b{font:600 1.1rem var(--f-display);text-transform:uppercase;letter-spacing:.05em}
+  .sheethead button{border:1px solid var(--line);background:var(--panel);border-radius:6px;padding:7px 14px;cursor:pointer}
+  .toast{bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+  .app{padding-bottom:100px}
+}
+@media (max-width:1080px) and (prefers-reduced-motion:reduce){.side{transition:none}}
+@media (max-width:760px){
+  /* En-tête compact */
+  .top{padding-block:10px;gap:8px}
+  h1{font-size:1.25rem}
+  .jalon{height:34px}
+  .sub{font-size:.74rem}
+  .chips{width:100%;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+  .chip{min-width:0;padding:3px 8px}
+  .chip b{font-size:.92rem}
+  .chip.mode b{font-size:.8rem}
+  h2{font-size:1.3rem}
+  /* Étapes : seul le nom de l'étape en cours est affiché */
+  .stepper{padding-block:6px}
+  .stepper button{padding:4px}
+  .stepper button.cur{padding-right:12px}
+  .stepper button:not(.cur) .st,.stepper button:not(.cur) small{display:none}
+  .stepper .sn{width:28px;height:28px}
+  /* Terrain */
+  .stationbar{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .stationbar .stname{grid-column:1/-1;grid-row:1}
+  .stationbar button{padding:11px 8px;font-size:.85rem}
+  .instrument{gap:14px}
+  .housing{max-width:none;padding:12px}
+  .lrow{font-size:1.25rem}
+  .softkeys button{padding:14px 6px!important;font-size:1rem!important}
+  .targets button{padding:10px 8px}
+  .actions button,.row-actions button{flex:1 1 auto;padding:11px 14px}
+  .fbox{padding:10px}
+  /* Tableaux de saisie → fiches */
+  .m-only{display:inline}
+  .tblwrap:has(> table.cards){border:0;border-radius:0;overflow:visible}
+  table.cards thead{display:none}
+  table.cards,table.cards tbody,table.cards tfoot{display:block}
+  table.cards tr{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px;padding:12px;margin-bottom:10px;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+  table.cards tr.here{background:var(--accent-soft);border-color:var(--accent)}
+  table.cards td,table.cards th{display:flex;flex-direction:column;align-items:stretch;gap:2px;border:0;padding:0;white-space:normal;text-align:left;min-width:0}
+  table.cards td[data-l]::before{content:attr(data-l);font:600 .66rem var(--f-body);text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+  table.cards .ttl{grid-column:1/-1;display:block;font:600 1.05rem var(--f-display);letter-spacing:.02em;padding-bottom:6px;border-bottom:1px solid var(--line)}
+  table.cards .rs,table.cards .x{display:none}
+  table.cards .num{text-align:left}
+  table.cards tfoot tr{background:var(--sunk)}
+  table.cards tfoot td{background:none}
+  .cards .fw{display:flex;width:100%}
+  .cards .fld{flex:1;width:auto;min-width:0}
+}
+</style>
+
+<header class="top">
+  <div class="brand">
+    <span class="jalon" aria-hidden="true"></span>
+    <div>
+      <h1>Cheminement polygonal</h1>
+      <p class="sub" id="scnSummary">Simulateur de lectures et de calculs</p>
+    </div>
+  </div>
+  <div class="chips">
+    <div class="chip mode" id="chipMode"><b>Apprentissage</b><small>Mode</small></div>
+    <div class="chip"><b id="scLect">—</b><small>Lectures</small></div>
+    <div class="chip"><b id="scCalc">0</b><small>Calculs</small></div>
+    <div class="chip note"><b id="scNote">—</b><small>Note / 20</small></div>
+  </div>
+</header>
+<nav class="stepper" id="stepper" aria-label="Étapes de l'exercice"></nav>
+
+<main class="app">
+  <section class="work" id="work">
+
+    <!-- ============ ÉTAPE 0 : SCÉNARIO ============ -->
+    <div class="step" id="step0" hidden>
+      <div class="stephead">
+        <h2>Scénario de l'exercice</h2>
+        <p>Choisissez le type de cheminement, le niveau et le mode. Un exercice est entièrement défini par son code : distribuez-le à la classe pour que chacun travaille sur le même terrain.</p>
+      </div>
+      <div class="formgrid">
+        <fieldset class="seg"><legend>Type de cheminement</legend>
+          <label><input type="radio" name="ptype" value="F" checked><span>Fermé</span></label>
+          <label><input type="radio" name="ptype" value="E"><span>Encadré</span></label>
+        </fieldset>
+        <label class="fl"><span class="lbl" id="countLbl">Nombre de sommets</span><input type="number" id="pCount" min="3" max="8" value="5"></label>
+        <fieldset class="seg"><legend>Niveau</legend>
+          <label><input type="radio" name="plevel" value="1"><span>Débutant</span></label>
+          <label><input type="radio" name="plevel" value="2" checked><span>Intermédiaire</span></label>
+          <label><input type="radio" name="plevel" value="3"><span>Expert</span></label>
+        </fieldset>
+        <fieldset class="seg"><legend>Mode</legend>
+          <label><input type="radio" name="pmode" value="learn" checked><span>Apprentissage</span></label>
+          <label><input type="radio" name="pmode" value="exam"><span>Examen</span></label>
+        </fieldset>
+        <label class="fl"><span class="lbl">Graine (n° d'exercice)</span><input type="number" id="pSeed" min="1" max="999999999"></label>
+      </div>
+      <div class="actions">
+        <button class="primary" id="btnRandom">Générer un exercice aléatoire</button>
+        <button id="btnSeed">Lancer avec cette graine</button>
+      </div>
+      <div class="codebox">
+        <div><span class="lbl">Code de l'exercice en cours</span><code id="curCode">—</code><button id="btnCopyCode" class="ghost">Copier</button></div>
+        <div><label class="lbl" for="inCode">Charger un code reçu</label><input id="inCode" placeholder="ex. F5-2-A-48213" autocomplete="off"><button id="btnLoadCode">Charger</button></div>
+        <p class="note" id="codeMsg">Même code = mêmes points, mêmes erreurs instrumentales et même bruit de mesure pour tous les élèves.</p>
+      </div>
+      <details class="manual" id="manualBox">
+        <summary>Saisie manuelle des points connus</summary>
+        <div class="mgrid">
+          <div class="grp" id="mgStartLbl">Point de départ (connu)</div>
+          <label>X (m)<input id="mSx" inputmode="decimal"></label>
+          <label>Y (m)<input id="mSy" inputmode="decimal"></label>
+          <label>Z (m)<input id="mSz" inputmode="decimal"></label>
+          <div class="grp">Référence d'orientation au départ</div>
+          <label>X (m)<input id="mRx" inputmode="decimal"></label>
+          <label>Y (m)<input id="mRy" inputmode="decimal"></label>
+          <div class="grp encOnly">Point d'arrivée (connu)</div>
+          <label class="encOnly">X (m)<input id="mEx" inputmode="decimal"></label>
+          <label class="encOnly">Y (m)<input id="mEy" inputmode="decimal"></label>
+          <label class="encOnly">Z (m)<input id="mEz" inputmode="decimal"></label>
+          <div class="grp encOnly">Référence d'orientation à l'arrivée</div>
+          <label class="encOnly">X (m)<input id="mQx" inputmode="decimal"></label>
+          <label class="encOnly">Y (m)<input id="mQy" inputmode="decimal"></label>
+          <div class="grp">Instrument et hauteurs (vide = aléatoire)</div>
+          <label>Collimation c (mgon)<input id="mC" inputmode="decimal" placeholder="aléatoire"></label>
+          <label>Erreur d'index i (mgon)<input id="mI" inputmode="decimal" placeholder="aléatoire"></label>
+          <label>Hi fixe (m)<input id="mHi" inputmode="decimal" placeholder="aléatoire"></label>
+          <label>Hp fixe (m)<input id="mHp" inputmode="decimal" placeholder="aléatoire"></label>
+        </div>
+        <div class="actions"><button id="btnManual" class="primary">Lancer le scénario manuel</button><span class="err" id="manualMsg"></span></div>
+      </details>
+      <div class="params" id="paramsBox"></div>
+    </div>
+
+    <!-- ============ ÉTAPE 1 : TERRAIN ============ -->
+    <div class="step" id="step1" hidden>
+      <div class="stephead">
+        <h2>Lectures au tachéomètre</h2>
+        <p>À chaque station : pointez la visée arrière puis la visée avant en cercle gauche, faites le retournement de la lunette, puis visez l'avant et l'arrière en cercle droit. Mesurez la distance (DIST) puis enregistrez (REC).</p>
+      </div>
+      <div class="stationbar">
+        <button id="btnPrevSt">◀ Station précédente</button>
+        <div class="stname" id="stName">Station</div>
+        <button id="btnNextSt">Station suivante ▶</button>
+      </div>
+      <div class="instrument">
+        <div class="ocwrap" id="ocWrap">
+          <div class="oclabel"><span id="ocTarget">Visée</span><span class="face" id="ocFace">CG</span></div>
+          <div class="ocstage" aria-label="Oculaire et vis de fin pointé">
+            <button class="u" data-mv="U" aria-label="Lunette vers le haut">▲</button>
+            <button class="l" data-mv="L" aria-label="Tourner à gauche">◀</button>
+            <canvas id="ocular" width="300" height="300" tabindex="0" aria-label="Oculaire de la lunette. Flèches du clavier : fin pointé ; Maj : pas de 10 ; D : distance ; Entrée : enregistrer ; F : retournement."></canvas>
+            <button class="r" data-mv="R" aria-label="Tourner à droite">▶</button>
+            <button class="d" data-mv="D" aria-label="Lunette vers le bas">▼</button>
+          </div>
+          <button id="btnPas" aria-pressed="false">Pas fin : 0,25 mgon</button>
+          <p class="ochint">Touchez l'image pour un pointé grossier ou faites-la glisser. Vis de fin pointé : appui long pour un mouvement continu. Clavier : flèches (Maj ×10).</p>
+        </div>
+        <div class="housing">
+          <div class="brandline"><span>Station totale · TS-1"</span><span id="hsStation">—</span></div>
+          <div class="lcd" id="lcd" aria-live="polite"></div>
+          <div class="softkeys">
+            <button id="kDist" title="Raccourci : D">DIST</button>
+            <button id="kRec" title="Raccourci : Entrée">REC</button>
+            <button id="kFace" title="Raccourci : F">CG ⇄ CD</button>
+          </div>
+          <div class="targets">
+            <button data-tg="b">Visée arrière<br><b id="tgB">—</b></button>
+            <button data-tg="f">Visée avant<br><b id="tgF">—</b></button>
+          </div>
+          <div class="checklist" id="checklist"></div>
+        </div>
+      </div>
+      <div class="row-actions">
+        <button id="btnAuto" class="ghost">Remplir le carnet automatiquement</button>
+        <button id="btnCopyCarnet" class="ghost">Copier le carnet (tableur)</button>
+        <span class="note" id="autoNote"></span>
+      </div>
+      <h3>Carnet de terrain</h3>
+      <div class="tblwrap" id="carnet"></div>
+    </div>
+
+    <!-- ============ ÉTAPES 2 à 6 (générées) ============ -->
+    <div class="step" id="step2" hidden></div>
+    <div class="step" id="step3" hidden></div>
+    <div class="step" id="step4" hidden></div>
+    <div class="step" id="step5" hidden></div>
+    <div class="step" id="step6" hidden></div>
+  </section>
+
+  <aside class="side" id="side" aria-label="Plan et données">
+    <div class="sheethead"><b>Plan et données</b><button id="sheetClose">Fermer</button></div>
+    <div class="card">
+      <div class="cardhead"><h2>Vue en plan</h2><span id="mapInfo"></span></div>
+      <canvas id="map" aria-label="Vue en plan du cheminement"></canvas>
+      <div class="legend">
+        <span><i class="lg-kn"></i>Point connu</span>
+        <span><i class="lg-cro"></i>Croquis de terrain</span>
+        <span><i class="lg-bru"></i>Cheminement calculé (vos valeurs)</span>
+        <span><i class="lg-com"></i>Cheminement compensé</span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Points connus</h2>
+      <div class="tblwrap" id="knownTbl"></div>
+    </div>
+    <div class="card">
+      <h2>Fermetures</h2>
+      <div id="closureBox"></div>
+    </div>
+  </aside>
+</main>
+<div class="backdrop" id="backdrop" hidden></div>
+<button class="fab" id="fabPlan" aria-controls="side" aria-expanded="false">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z"/><path d="M9 3v15M15 6v15"/></svg>
+  Plan · fermetures
+</button>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+'use strict';
+/* =====================================================================
+   1. OUTILS : ANGLES EN GRADES, ALÉATOIRE REPRODUCTIBLE, FORMATAGE
+   ===================================================================== */
+const GON = Math.PI / 200;          // 1 gon en radians
+const K_PX = 0.00025;               // 1 pixel de décalage dans l'oculaire = 0,25 mgon
+const SIG_ANG = 0.001;              // écart-type angulaire par station (gon) utilisé pour la tolérance
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const norm400 = a => ((a % 400) + 400) % 400;                       // ramène dans [0 ; 400[
+const normSigned = a => { a = norm400(a); return a > 200 ? a - 400 : a; }; // ramène dans ]-200 ; 200]
+const gis = (A, B) => norm400(Math.atan2(B.x - A.x, B.y - A.y) / GON);  // gisement A→B (depuis le Nord, sens horaire)
+const dist2D = (A, B) => Math.hypot(B.x - A.x, B.y - A.y);
+const rnd4 = v => Math.round(v * 1e4) / 1e4;
+const rnd3 = v => Math.round(v * 1e3) / 1e3;
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/** Formate un nombre à la française (virgule décimale). */
+function fmt(v, d) {
+  if (v == null || !isFinite(v)) return '—';
+  if (Math.abs(v) < 0.5 * Math.pow(10, -d)) v = 0;
+  return v.toFixed(d).replace('.', ',');
+}
+/** Lit une saisie élève : accepte virgule ou point, espaces ignorés. */
+function parseNum(s) {
+  if (s == null) return NaN;
+  s = String(s).trim().replace(/[\s ]/g, '').replace(',', '.');
+  return /^[-+]?(\d+\.?\d*|\.\d+)$/.test(s) ? parseFloat(s) : NaN;
+}
+/** Générateur pseudo-aléatoire reproductible (même graine = même exercice). */
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function gaussFrom(R) { let u = 0, v = 0; while (!u) u = R(); while (!v) v = R(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+function hashStr(s) { let h = 2166136261; for (const ch of s) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
+
+/* Niveaux : amplitude des erreurs instrumentales, décalage initial du pointé, bruit de lecture */
+const LEVELS = {
+  1: { name: 'Débutant',      cMin: 0.0020, cMax: 0.0060, offset: 0,  sig: 0.0003 },
+  2: { name: 'Intermédiaire', cMin: 0.0050, cMax: 0.0150, offset: 45, sig: 0.0005 },
+  3: { name: 'Expert',        cMin: 0.0100, cMax: 0.0300, offset: 95, sig: 0.0008 },
+};
+/* Types de champs de calcul : tolérance d'acceptation et nombre de décimales */
+const KINDS = {
+  ang: { tol: 0.0008, dec: 4, unit: 'gon', cyc: true },  // angles, gisements
+  err: { tol: 0.0006, dec: 4, unit: 'gon' },             // c, i, fα
+  dh:  { tol: 0.002,  dec: 3, unit: 'm' },               // distances horizontales
+  dd:  { tol: 0.003,  dec: 3, unit: 'm' },               // ΔX, ΔY, ΔZ, fermetures
+  co:  { tol: 0.006,  dec: 3, unit: 'm' },               // coordonnées définitives
+};
+const STEPS = ['Scénario', 'Terrain', 'Réduction', 'Gisements', 'Coordonnées', 'Compensation', 'Bilan'];
+const ORDER = ['bCG', 'fCG', 'fCD', 'bCD'];  // ordre classique des lectures à une station
+
+/* =====================================================================
+   2. GÉNÉRATEUR DE SCÉNARIOS
+   p = { type:'F'|'E', count, level, mode:'learn'|'exam', seed, manual? }
+   ===================================================================== */
+function genScenario(p) {
+  const R = mulberry32(p.seed >>> 0);
+  const rnd = (a, b) => a + (b - a) * R();
+  const sgn = () => (R() < 0.5 ? -1 : 1);
+  const L = LEVELS[p.level] || LEVELS[2];
+  const M = p.manual || null;
+  const pts = {};
+  const P = (x, y, z, known, role) => ({ x, y, z, known, role });
+  const polar = (A, g, d) => ({ x: A.x + d * Math.sin(g * GON), y: A.y + d * Math.cos(g * GON) });
+  let seq = [], refStart, refEnd;
+
+  if (p.type === 'F') {
+    // ---- Cheminement fermé : polygone S1…Sm, retour sur S1, référence R ----
+    const m = clamp(p.count | 0, 3, 8);
+    const S1 = M ? P(M.sx, M.sy, M.sz, true, 'Départ et arrivée')
+                 : P(rnd3(rnd(1200, 1800)), rnd3(rnd(5200, 5800)), rnd3(rnd(95, 140)), true, 'Départ et arrivée');
+    pts.S1 = S1;
+    const r = rnd(70, 140), th0 = rnd(0, 400), dir = sgn();
+    const C = polar(S1, th0 + 200, r);           // centre du polygone
+    let z = S1.z;
+    for (let k = 1; k < m; k++) {
+      const th = th0 + dir * k * 400 / m + rnd(-0.17, 0.17) * 400 / m;
+      const q = polar(C, th, r * rnd(0.75, 1.25));
+      z += rnd(-3, 3);
+      pts['S' + (k + 1)] = P(q.x, q.y, z, false, 'Station nouvelle');
+    }
+    for (let k = 1; k <= m; k++) seq.push('S' + k);
+    seq.push('S1');
+    const qR = M ? { x: M.rx, y: M.ry } : polar(S1, th0 + rnd(-60, 60), rnd(350, 800));
+    pts.R = P(rnd3(qR.x), rnd3(qR.y), rnd3(S1.z + rnd(5, 25)), true, 'Référence (orientation)');
+    refStart = refEnd = 'R';
+  } else {
+    // ---- Cheminement encadré : A → S1…Sk → B, références RA et RB ----
+    const k = clamp(p.count | 0, 1, 6);
+    const A = M ? P(M.sx, M.sy, M.sz, true, 'Départ')
+                : P(rnd3(rnd(1200, 1800)), rnd3(rnd(5200, 5800)), rnd3(rnd(95, 140)), true, 'Départ');
+    let B, phi, Lt;
+    if (M) { B = P(M.ex, M.ey, M.ez, true, 'Arrivée'); phi = gis(A, B); Lt = dist2D(A, B); }
+    else {
+      phi = rnd(0, 400); Lt = rnd(85, 115) * (k + 1);
+      const q = polar(A, phi, Lt);
+      B = P(rnd3(q.x), rnd3(q.y), rnd3(A.z + rnd(-8, 8)), true, 'Arrivée');
+    }
+    pts.A = A; seq.push('A');
+    for (let j = 1; j <= k; j++) {
+      const t = (j + rnd(-0.15, 0.15)) / (k + 1);
+      const base = { x: A.x + t * (B.x - A.x), y: A.y + t * (B.y - A.y) };
+      const q = polar(base, phi + 100, rnd(-0.35, 0.35) * Lt / (k + 1));
+      pts['S' + j] = P(q.x, q.y, A.z + t * (B.z - A.z) + rnd(-2, 2), false, 'Station nouvelle');
+      seq.push('S' + j);
+    }
+    pts.B = B; seq.push('B');
+    const qa = M ? { x: M.rx, y: M.ry } : polar(A, phi + 200 + rnd(-70, 70), rnd(300, 700));
+    const qb = M ? { x: M.qx, y: M.qy } : polar(B, phi + rnd(-70, 70), rnd(300, 700));
+    pts.RA = P(rnd3(qa.x), rnd3(qa.y), rnd3(A.z + rnd(5, 25)), true, 'Référence au départ');
+    pts.RB = P(rnd3(qb.x), rnd3(qb.y), rnd3(B.z + rnd(5, 25)), true, 'Référence à l\'arrivée');
+    refStart = 'RA'; refEnd = 'RB';
+  }
+
+  const n = seq.length - 1;
+  // Erreurs instrumentales (identiques pour tout le cheminement : c'est le même appareil)
+  const num = v => (v !== '' && v != null && isFinite(v));
+  const inst = {
+    c: M && num(M.c) ? M.c / 1000 : sgn() * rnd(L.cMin, L.cMax),
+    i: M && num(M.i) ? M.i / 1000 : sgn() * rnd(L.cMin, L.cMax),
+    sig: L.sig,
+  };
+  // Mise en station : Hi, Hp et orientation aléatoire du zéro du limbe
+  const hiOf = () => (M && num(M.hi) ? +M.hi : p.level === 1 ? 1.6 : rnd3(rnd(1.45, 1.72)));
+  const hpOf = () => (M && num(M.hp) ? +M.hp : p.level === 1 ? 1.6 : Math.round(rnd(1.3, 2.0) * 100) / 100);
+  const st = [];
+  for (let i = 0; i <= n; i++) {
+    st.push({
+      name: seq[i], hi: hiOf(), v0: rnd(0, 400),
+      sights: { b: { target: i === 0 ? refStart : seq[i - 1], hp: hpOf() }, f: { target: i === n ? refEnd : seq[i + 1], hp: hpOf() } },
+    });
+  }
+  // Bruit de mesure et décalage initial du réticule pour chaque lecture (reproductibles)
+  const noise = {}, init = {};
+  for (let i = 0; i <= n; i++) for (const w of ['b', 'f']) for (const f of ['CG', 'CD']) {
+    const k = i + w + f;
+    noise[k] = { hz: gaussFrom(R) * L.sig, v: gaussFrom(R) * L.sig, d: gaussFrom(R) };
+    init[k] = L.offset ? { ox: Math.round(sgn() * rnd(0.3, 1) * L.offset), oy: Math.round(sgn() * rnd(0.3, 1) * L.offset * 0.7) } : { ox: 0, oy: 0 };
+  }
+  // Croquis : positions approchées des stations inconnues (± 3 m)
+  const croquis = {};
+  for (const [name, q] of Object.entries(pts)) croquis[name] = q.known ? { x: q.x, y: q.y } : { x: q.x + rnd(-3, 3), y: q.y + rnd(-3, 3) };
+  return { p, pts, seq, n, st, inst, noise, init, croquis, refStart, refEnd };
+}
+
+/* =====================================================================
+   3. SIMULATION DES OBSERVATIONS (tachéomètre)
+   ===================================================================== */
+/** Observation vraie de la station i vers sa visée w ('b' arrière, 'f' avant). */
+function trueObs(i, w) {
+  const s = SCN.st[i], A = SCN.pts[s.name], sg = s.sights[w], T = SCN.pts[sg.target];
+  const dh = dist2D(A, T);
+  const dH = (T.z + sg.hp) - (A.z + s.hi);                // de l'axe des tourillons au centre du prisme
+  return { hz: norm400(gis(A, T) - s.v0), z: Math.atan2(dh, dH) / GON, di: Math.hypot(dh, dH), dh };
+}
+/** Lecture affichée par l'instrument, compte tenu du pointé (ox, oy en pixels), de c, de i et du bruit. */
+function reading(i, w, face, aim) {
+  const t = trueObs(i, w), nz = SCN.noise[i + w + face], I = SCN.inst;
+  const aHz = t.hz - aim.ox * K_PX + nz.hz;               // direction réellement visée
+  const aZ = t.z - aim.oy * K_PX + nz.v;
+  let hz, v;
+  if (face === 'CG') { hz = norm400(aHz + I.c); v = aZ + I.i; }
+  else { hz = norm400(aHz + 200 - I.c); v = norm400(400 - aZ + I.i); }
+  const di = t.di + nz.d * (0.002 + 2e-6 * t.di);         // précision EDM : 2 mm + 2 ppm
+  return { hz, v, di };
+}
+/** Rayon apparent du prisme dans l'oculaire (pixels). */
+const prismPx = (i, w) => clamp(2600 / trueObs(i, w).di, 8, 60);
+
+/* =====================================================================
+   4. ÉTAT DE LA SÉANCE
+   ===================================================================== */
+let SCN = null;     // scénario (points vrais, stations, erreurs)
+let S = null;       // état élève (lectures, saisies, étape…)
+let EXP = null;     // valeurs attendues calculées à partir du carnet de l'élève
+let DEFS = [], DEF = {};
+let streak = 0;
+
+function freshState(p) {
+  return { p, step: 1, st: 0, target: 'b', face: 'CG', aim: {}, dist: null, obs: {}, auto: false, fields: {}, submitted: false };
+}
+const isLearn = () => S.p.mode !== 'exam';
+const nm = i => SCN.seq[i];
+const stLabel = i => (SCN.p.type === 'F' && i === SCN.n ? 'S1 (retour)' : SCN.seq[i]);
+const tg = (i, w) => SCN.st[i].sights[w].target;
+const legLabel = i => `${SCN.seq[i]} → ${SCN.seq[i + 1]}`;
+const allComplete = () => SCN.st.every((_, i) => ORDER.every(k => S.obs[i + k]));
+const stationComplete = i => ORDER.every(k => S.obs[i + k]);
+
+/* =====================================================================
+   5. MOTEUR DE CALCUL : solution attendue à partir du carnet de l'élève
+   ===================================================================== */
+/** Réduction d'une visée : moyenne CG/CD, collimation, index, Dh, dénivelée. */
+function reduce(i, w) {
+  const g = S.obs[i + w + 'CG'], d = S.obs[i + w + 'CD'];
+  const dd = normSigned(d.hz - 200 - g.hz);
+  const hz = norm400(g.hz + dd / 2);            // Hz moyen = [CG + (CD ± 200)] / 2
+  const c = -dd / 2;                            // c = [CG − (CD ± 200)] / 2
+  const z = (g.v - d.v + 400) / 2;              // Z moyen
+  const vi = (g.v + d.v - 400) / 2;             // erreur d'index
+  const di = (g.di + d.di) / 2;
+  const s = SCN.st[i];
+  return { hz, c, z, vi, di, dh: di * Math.sin(z * GON), dz: di * Math.cos(z * GON) + s.hi - s.sights[w].hp };
+}
+function solve() {
+  const n = SCN.n, N = n + 1, P = SCN.pts, E = {};
+  const red = [];
+  for (let i = 0; i <= n; i++) red[i] = { b: reduce(i, 'b'), f: reduce(i, 'f') };
+  for (let i = 0; i <= n; i++) {
+    E[`hz_${i}_b`] = red[i].b.hz; E[`hz_${i}_f`] = red[i].f.hz; E[`c_${i}`] = red[i].f.c;
+    if (i < n) { E[`z_${i}`] = red[i].f.z; E[`vi_${i}`] = red[i].f.vi; E[`dh_${i}`] = red[i].f.dh; }
+  }
+  const S0 = P[SCN.seq[0]], Sn = P[SCN.seq[n]];
+  E.g0 = gis(S0, P[SCN.refStart]);
+  E.gend = gis(Sn, P[SCN.refEnd]);
+  // Transmission des gisements par les V0 de station
+  for (let i = 0; i <= n; i++) {
+    const gBack = i === 0 ? E.g0 : norm400(E[`gb_${i - 1}`] + 200);
+    E[`v0_${i}`] = norm400(gBack - red[i].b.hz);
+    E[`gb_${i}`] = norm400(E[`v0_${i}`] + red[i].f.hz);
+  }
+  E.fa = normSigned(E[`gb_${n}`] - E.gend);                 // fermeture angulaire
+  for (let i = 0; i < n; i++) E[`gc_${i}`] = norm400(E[`gb_${i}`] - E.fa * (i + 1) / N);
+  // Coordonnées approchées
+  let sx = 0, sy = 0, sz = 0, L = 0;
+  for (let i = 0; i < n; i++) {
+    const dh = red[i].f.dh, g = E[`gc_${i}`] * GON;
+    E[`dx_${i}`] = dh * Math.sin(g); E[`dy_${i}`] = dh * Math.cos(g); E[`dz_${i}`] = red[i].f.dz;
+    sx += E[`dx_${i}`]; sy += E[`dy_${i}`]; sz += E[`dz_${i}`]; L += dh;
+  }
+  E.fx = sx - (Sn.x - S0.x); E.fy = sy - (Sn.y - S0.y); E.fz = sz - (Sn.z - S0.z);
+  E.fp = Math.hypot(E.fx, E.fy);
+  // Compensation proportionnelle aux distances
+  let x = S0.x, y = S0.y, z = S0.z;
+  for (let i = 0; i < n - 1; i++) {
+    const r = red[i].f.dh / L;
+    x += E[`dx_${i}`] - E.fx * r; y += E[`dy_${i}`] - E.fy * r; z += E[`dz_${i}`] - E.fz * r;
+    E[`X_${i + 1}`] = x; E[`Y_${i + 1}`] = y; E[`Z_${i + 1}`] = z;
+  }
+  E.meta = {
+    red, L, N,
+    Ta: 2.7 * SIG_ANG * Math.sqrt(N),
+    Tp: Math.max(0.02, L / 5000),
+    Tz: 2.7 * 0.005 * Math.sqrt(n),
+  };
+  return E;
+}
+function computeEXP(recheck = true) {
+  EXP = solve();
+  if (recheck && isLearn()) for (const d of DEFS) { const f = S.fields[d.id]; if (f && f.tries && !f.rev) f.ok = check(d.id); }
+}
+
+/* Définition des champs à calculer par l'élève, étape par étape */
+function buildDefs() {
+  const n = SCN.n; DEFS = [];
+  const add = (id, step, kind, label) => DEFS.push({ id, step, kind, label });
+  for (let i = 0; i <= n; i++) {
+    add(`hz_${i}_b`, 2, 'ang', `Hz moyen ${stLabel(i)} → ${tg(i, 'b')}`);
+    add(`hz_${i}_f`, 2, 'ang', `Hz moyen ${stLabel(i)} → ${tg(i, 'f')}`);
+    add(`c_${i}`, 2, 'err', `Collimation c (${stLabel(i)} → ${tg(i, 'f')})`);
+    if (i < n) {
+      add(`z_${i}`, 2, 'ang', `Z moyen ${legLabel(i)}`);
+      add(`vi_${i}`, 2, 'err', `Erreur d'index i (${legLabel(i)})`);
+      add(`dh_${i}`, 2, 'dh', `Dh ${legLabel(i)}`);
+    }
+  }
+  add('g0', 3, 'ang', `Gisement ${nm(0)} → ${SCN.refStart}`);
+  add('gend', 3, 'ang', `Gisement ${nm(n)} → ${SCN.refEnd}`);
+  for (let i = 0; i <= n; i++) { add(`v0_${i}`, 3, 'ang', `V0 station ${stLabel(i)}`); add(`gb_${i}`, 3, 'ang', `Gisement brut ${stLabel(i)} → ${tg(i, 'f')}`); }
+  add('fa', 3, 'err', 'Fermeture angulaire fα');
+  for (let i = 0; i < n; i++) add(`gc_${i}`, 3, 'ang', `Gisement compensé ${legLabel(i)}`);
+  for (let i = 0; i < n; i++) { add(`dx_${i}`, 4, 'dd', `ΔX ${legLabel(i)}`); add(`dy_${i}`, 4, 'dd', `ΔY ${legLabel(i)}`); add(`dz_${i}`, 4, 'dd', `ΔZ ${legLabel(i)}`); }
+  add('fx', 4, 'dd', 'Fermeture fx'); add('fy', 4, 'dd', 'Fermeture fy'); add('fz', 4, 'dd', 'Fermeture fz'); add('fp', 4, 'dd', 'Fermeture planimétrique fp');
+  for (let k = 1; k < n; k++) { add(`X_${k}`, 5, 'co', `X ${nm(k)}`); add(`Y_${k}`, 5, 'co', `Y ${nm(k)}`); add(`Z_${k}`, 5, 'co', `Z ${nm(k)}`); }
+  DEF = Object.fromEntries(DEFS.map(d => [d.id, d]));
+}
+const fs = id => (S.fields[id] ||= { v: '', tries: 0, ok: null, first: false, rev: false });
+const sv = id => parseNum(S.fields[id]?.v);
+function check(id) {
+  const d = DEF[id], k = KINDS[d.kind], v = sv(id), e = EXP?.[id];
+  if (!isFinite(v) || e == null) return null;
+  const diff = k.cyc ? normSigned(v - e) : v - e;
+  return Math.abs(diff) <= k.tol;
+}
+
+/* =====================================================================
+   6. SCORES
+   ===================================================================== */
+const lectureScore = res => clamp(1 - res / 3, 0, 1);   // 3 mgon de résidu de pointé = 0
+function lecturePct() {
+  const vals = [];
+  for (const o of Object.values(S.obs)) {
+    if (o.auto) { if (!isLearn()) vals.push(0); }
+    else vals.push(lectureScore(o.res));
+  }
+  return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+}
+function calcPoints() {
+  let pts = 0;
+  for (const d of DEFS) {
+    const f = S.fields[d.id]; if (!f) continue;
+    if (!isLearn()) { if (S.submitted && f.ok) pts += 1; }
+    else if (!f.rev && f.ok) pts += f.first ? 1 : 0.5;
+  }
+  return pts;
+}
+function noteSur20() {
+  const lp = lecturePct(), cp = calcPoints() / DEFS.length;
+  return lp == null ? 20 * cp : 20 * (0.3 * lp + 0.7 * cp);
+}
+function renderHeader() {
+  const lp = lecturePct();
+  $('#scLect').textContent = lp == null ? '—' : Math.round(lp * 100) + ' %';
+  $('#scCalc').textContent = `${fmt(calcPoints(), calcPoints() % 1 ? 1 : 0)}/${DEFS.length}`;
+  $('#scNote').textContent = !isLearn() && !S.submitted ? '—' : fmt(noteSur20(), 1);
+  const chip = $('#chipMode');
+  chip.querySelector('b').textContent = isLearn() ? 'Apprentissage' : 'Examen';
+  chip.classList.toggle('exam', !isLearn());
+  const t = SCN.p.type === 'F' ? 'Cheminement fermé' : 'Cheminement encadré';
+  $('#scnSummary').textContent = `${t} · ${SCN.n + 1} stations · ${LEVELS[SCN.p.level].name} · code ${makeCode(SCN.p)}`;
+}
+
+/* =====================================================================
+   7. MODULE TERRAIN : OCULAIRE + ÉCRAN DE LA STATION
+   ===================================================================== */
+const curKey = () => S.st + S.target + S.face;
+function curAim() { const k = curKey(); if (!S.aim[k]) S.aim[k] = { ...SCN.init[k] }; return S.aim[k]; }
+function moveAim(dx, dy) { const a = curAim(); a.ox = clamp(a.ox + dx, -170, 170); a.oy = clamp(a.oy + dy, -170, 170); renderLive(); }
+
+function drawOcular() {
+  const cv = $('#ocular'), D = 300, dpr = window.devicePixelRatio || 1;
+  if (cv.width !== D * dpr) { cv.width = D * dpr; cv.height = D * dpr; }
+  const c = cv.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, D, D);
+  const a = curAim(), rp = prismPx(S.st, S.target);
+  const px = 150 + a.ox, py = 150 + a.oy, TAU = Math.PI * 2;
+  c.save(); c.beginPath(); c.arc(150, 150, 146, 0, TAU); c.clip();
+  // Arrière-plan : ciel brumeux puis végétation lointaine, solidaire de la cible
+  const g = c.createLinearGradient(0, py - 260, 0, py + 260);
+  g.addColorStop(0, '#8fb7d3'); g.addColorStop(0.42, '#d8e5ea'); g.addColorStop(0.52, '#a3b08f'); g.addColorStop(1, '#4f5f43');
+  c.fillStyle = g; c.fillRect(0, 0, D, D);
+  const R2 = mulberry32(hashStr(tg(S.st, S.target) + S.st));
+  for (let k = 0; k < 12; k++) {
+    c.fillStyle = `rgba(${60 + R2() * 30},${80 + R2() * 30},${50 + R2() * 20},.55)`;
+    c.beginPath(); c.ellipse(px - 330 + k * 60 + R2() * 30, py + 18 + R2() * 26, 30 + R2() * 26, 18 + R2() * 18, 0, 0, TAU); c.fill();
+  }
+  // Canne du prisme à bandes rouges et blanches
+  const pw = Math.max(3, rp * 0.22), band = Math.max(8, rp * 0.9);
+  for (let y = py + rp * 0.9, k = 0; y < D + 20; y += band, k++) { c.fillStyle = k % 2 ? '#f3f3f0' : '#cf3a21'; c.fillRect(px - pw / 2, y, pw, band); }
+  // Plaque de visée jaune avec triangles noirs pointant le centre
+  c.beginPath(); c.arc(px, py, rp, 0, TAU); c.fillStyle = '#f0c12c'; c.fill();
+  c.lineWidth = 1.5; c.strokeStyle = '#2a2a2a'; c.stroke();
+  c.fillStyle = '#1a1a1a';
+  for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
+    const tx = px + dx * rp * 0.5, ty = py + dy * rp * 0.5, bx = px + dx * rp * 0.95, by = py + dy * rp * 0.95;
+    c.beginPath(); c.moveTo(tx, ty); c.lineTo(bx - dy * rp * 0.26, by + dx * rp * 0.26); c.lineTo(bx + dy * rp * 0.26, by - dx * rp * 0.26); c.closePath(); c.fill();
+  }
+  // Verre du prisme
+  const rg = c.createRadialGradient(px - rp * 0.12, py - rp * 0.12, 1, px, py, rp * 0.45);
+  rg.addColorStop(0, '#9fd2df'); rg.addColorStop(0.6, '#2b5a6b'); rg.addColorStop(1, '#0e2630');
+  c.beginPath(); c.arc(px, py, rp * 0.45, 0, TAU); c.fillStyle = rg; c.fill();
+  c.lineWidth = Math.max(1, rp * 0.05); c.strokeStyle = '#3a3a3a'; c.stroke();
+  c.beginPath(); c.ellipse(px - rp * 0.14, py - rp * 0.16, rp * 0.12, rp * 0.06, -0.6, 0, TAU); c.fillStyle = 'rgba(255,255,255,.7)'; c.fill();
+  // Réticule : traits épais en périphérie, fin au centre, traits stadimétriques
+  c.strokeStyle = 'rgba(10,12,14,.92)';
+  c.lineWidth = 3.2;
+  c.beginPath();
+  c.moveTo(4, 150); c.lineTo(105, 150); c.moveTo(195, 150); c.lineTo(296, 150);
+  c.moveTo(150, 4); c.lineTo(150, 105); c.moveTo(150, 195); c.lineTo(150, 296); c.stroke();
+  c.lineWidth = 1;
+  c.beginPath(); c.moveTo(105, 150); c.lineTo(195, 150); c.moveTo(150, 105); c.lineTo(150, 195);
+  c.moveTo(138, 118); c.lineTo(162, 118); c.moveTo(138, 182); c.lineTo(162, 182); c.stroke();
+  // Vignettage de l'oculaire
+  const vg = c.createRadialGradient(150, 150, 100, 150, 150, 148);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.78)');
+  c.fillStyle = vg; c.fillRect(0, 0, D, D);
+  c.restore();
+}
+
+function renderLCD() {
+  const i = S.st, w = S.target, f = S.face, s = SCN.st[i], a = curAim();
+  const r = reading(i, w, f, a);
+  const d = S.dist && S.dist.key === curKey() ? S.dist : null;
+  let di = '-------', dh = '-------', status = 'DIST pour mesurer';
+  if (d) {
+    if (d.busy) { di = '  . . .'; status = 'Mesure EDM…'; }
+    else if (d.err) { status = 'E101 : pas de retour prisme'; }
+    else { di = fmt(d.di, 3); const z = f === 'CG' ? r.v : 400 - r.v; dh = fmt(d.di * Math.sin(z * GON), 3); status = 'Distance mesurée'; }
+  }
+  if (S.obs[curKey()]) status += ' · enregistré';
+  $('#lcd').innerHTML = `
+    <div class="lrow top"><span>${f === 'CG' ? 'Face I · Cercle gauche' : 'Face II · Cercle droit'}</span><span>${esc(stLabel(i))} ▸ ${esc(tg(i, w))}</span></div>
+    <div class="lrow"><span class="lk">Hz</span><span class="lv">${fmt(r.hz, 4)}</span><span class="lu">gon</span></div>
+    <div class="lrow"><span class="lk">V</span><span class="lv">${fmt(r.v, 4)}</span><span class="lu">gon</span></div>
+    <div class="lrow"><span class="lk">Di</span><span class="lv">${di}</span><span class="lu">m</span></div>
+    <div class="lrow"><span class="lk">Dh</span><span class="lv">${dh}</span><span class="lu">m</span></div>
+    <div class="lrow foot"><span>Hi ${fmt(s.hi, 3)}</span><span>Hp ${fmt(s.sights[w].hp, 3)}</span><span>${status}</span></div>`;
+  $('#kDist').classList.toggle('hot', !d || d.err);
+  $('#kRec').classList.toggle('hot', !!(d && !d.busy && !d.err));
+}
+function renderLive() { drawOcular(); renderLCD(); }
+
+function renderTerrain() {
+  const i = S.st, n = SCN.n;
+  $('#stName').innerHTML = `Station ${esc(stLabel(i))}<small>${i + 1} / ${n + 1} · Hi = ${fmt(SCN.st[i].hi, 3)} m</small>`;
+  $('#hsStation').textContent = 'St. ' + stLabel(i);
+  $('#btnPrevSt').disabled = i === 0;
+  $('#btnNextSt').textContent = i === n ? 'Passer aux calculs ▶' : 'Station suivante ▶';
+  $('#btnNextSt').disabled = !stationComplete(i);
+  $('#tgB').textContent = tg(i, 'b'); $('#tgF').textContent = tg(i, 'f');
+  $$('.targets button').forEach(b => b.classList.toggle('on', b.dataset.tg === S.target));
+  $('#ocTarget').textContent = `${S.target === 'b' ? 'Visée arrière' : 'Visée avant'} : ${tg(i, S.target)}`;
+  $('#ocFace').textContent = S.face;
+  $('#checklist').innerHTML = ORDER.map(k => {
+    const lab = (k[0] === 'b' ? 'AR' : 'AV') + ' · ' + k.slice(1);
+    const cls = S.obs[i + k] ? 'done' : (k === S.target + S.face ? 'cur' : '');
+    return `<span class="ck ${cls}">${S.obs[i + k] ? '✓ ' : ''}${lab}</span>`;
+  }).join('');
+  $('#autoNote').textContent = S.auto ? (isLearn() ? 'Lectures automatiques : non comptées dans le score.' : 'Lectures automatiques : notées 0 en examen.') : '';
+  renderCarnet(); renderLive();
+}
+function renderCarnet() {
+  let h = `<table class="cards"><thead><tr><th>Station</th><th>Hi</th><th>Point visé</th><th>Hp</th><th>Hz CG</th><th>Hz CD</th><th>V CG</th><th>V CD</th><th>Di CG</th><th>Di CD</th><th>Pointé</th></tr></thead><tbody>`;
+  for (let i = 0; i <= SCN.n; i++) for (const w of ['b', 'f']) {
+    const g = S.obs[i + w + 'CG'], d = S.obs[i + w + 'CD'], hi = SCN.st[i].hi;
+    const res = [g, d].filter(o => o && !o.auto).map(o => o.res);
+    h += `<tr class="clickable ${w === 'b' ? 'grp' : ''} ${i === S.st ? 'here' : ''}" data-st="${i}">
+      ${w === 'b' ? `<th rowspan="2" class="rs">${esc(stLabel(i))}</th><td rowspan="2" class="num rs">${fmt(hi, 3)}</td>` : ''}
+      <td class="ttl"><span class="m-only">${esc(stLabel(i))} (Hi ${fmt(hi, 3)}) · </span>${w === 'b' ? 'AR' : 'AV'} ${esc(tg(i, w))}</td>${td('Hp', fmt(SCN.st[i].sights[w].hp, 3), 'num')}
+      ${td('Hz CG', g ? fmt(g.hz, 4) : '', 'num')}${td('Hz CD', d ? fmt(d.hz, 4) : '', 'num')}
+      ${td('V CG', g ? fmt(g.v, 4) : '', 'num')}${td('V CD', d ? fmt(d.v, 4) : '', 'num')}
+      ${td('Di CG', g ? fmt(g.di, 3) : '', 'num')}${td('Di CD', d ? fmt(d.di, 3) : '', 'num')}
+      ${td('Pointé', res.length ? fmt(Math.max(...res), 1) + ' mgon' : (g || d ? 'auto' : ''), 'num')}</tr>`;
+  }
+  $('#carnet').innerHTML = h + '</tbody></table>';
+}
+
+let wakeLock = null;
+/** Garde l'écran du téléphone allumé pendant les lectures (si le navigateur l'autorise). */
+function keepAwake() {
+  try {
+    if (!wakeLock && navigator.wakeLock) navigator.wakeLock.request('screen').then(l => { wakeLock = l; l.addEventListener('release', () => { wakeLock = null; }); }).catch(() => {});
+  } catch (e) { /* non disponible */ }
+}
+function doDist() {
+  keepAwake();
+  const key = curKey(), a = curAim();
+  S.dist = { key, busy: true }; renderLCD();
+  setTimeout(() => {
+    if (!S.dist || S.dist.key !== key) return;
+    if (Math.hypot(a.ox, a.oy) > prismPx(S.st, S.target)) S.dist = { key, err: true };
+    else S.dist = { key, di: reading(S.st, S.target, S.face, a).di };
+    renderLCD(); save();
+  }, 600);
+}
+function doRec() {
+  const d = S.dist && S.dist.key === curKey() ? S.dist : null;
+  if (!d || d.busy || d.err) { toast(d && d.err ? 'Pas de distance : centrez mieux le prisme puis relancez DIST.' : 'Mesurez d\'abord la distance (DIST).', 'bad'); return; }
+  const a = curAim(), r = reading(S.st, S.target, S.face, a);
+  const res = Math.hypot(a.ox, a.oy) * K_PX * 1000;   // résidu de pointé en mgon
+  S.obs[curKey()] = { hz: rnd4(r.hz), v: rnd4(r.v), di: rnd3(d.di), res: Math.round(res * 100) / 100, auto: false };
+  S.dist = null;
+  const sc = lectureScore(res);
+  let msg = `Lecture enregistrée · pointé à ${fmt(res, 2)} mgon · ${Math.round(sc * 100)} %`;
+  const next = ORDER.find(k => !S.obs[S.st + k]);
+  if (next) {
+    if (next.slice(1) === S.face) S.target = next[0];
+    else msg += ' · faites le retournement (CG ⇄ CD)';
+  } else msg = `Station ${stLabel(S.st)} terminée. ` + msg;
+  if (allComplete()) { computeEXP(); msg = 'Carnet complet : les calculs sont débloqués.'; }
+  toast(msg, sc > 0.7 ? 'ok' : '');
+  renderTerrain(); renderHeader(); renderStepper(); drawMap(); renderClosure(); save();
+}
+function doFlip() {
+  S.face = S.face === 'CG' ? 'CD' : 'CG';
+  const next = ORDER.find(k => !S.obs[S.st + k] && k.slice(1) === S.face);
+  if (next) S.target = next[0];
+  const w = $('#ocular'); w.classList.remove('flip'); void w.offsetWidth; w.classList.add('flip');
+  renderTerrain(); save();
+}
+function gotoStation(i) {
+  S.st = clamp(i, 0, SCN.n);
+  const next = ORDER.find(k => !S.obs[S.st + k]) || 'bCG';
+  S.target = next[0]; S.face = next.slice(1);
+  renderTerrain(); drawMap(); save();
+}
+function autoFill() {
+  for (let i = 0; i <= SCN.n; i++) for (const k of ORDER) {
+    if (S.obs[i + k]) continue;
+    const r = reading(i, k[0], k.slice(1), { ox: 0, oy: 0 });
+    S.obs[i + k] = { hz: rnd4(r.hz), v: rnd4(r.v), di: rnd3(r.di), res: 0, auto: true };
+  }
+  S.auto = true; computeEXP();
+  toast('Carnet rempli automatiquement : les calculs sont débloqués.', 'ok');
+  renderTerrain(); renderHeader(); renderStepper(); drawMap(); renderClosure(); save();
+}
+
+/* =====================================================================
+   8. ÉTAPES DE CALCUL (tableaux de saisie)
+   ===================================================================== */
+function fieldCls(id) {
+  const f = S.fields[id]; if (!f) return '';
+  if (!isLearn() && !S.submitted) return f.v ? 'filled' : '';
+  if (f.rev) return 'rev';
+  return f.ok === true ? 'ok' : f.ok === false ? 'bad' : '';
+}
+function markHTML(id) {
+  const c = fieldCls(id);
+  if (c === 'ok') return '✓';
+  if (c === 'rev') return '≡';
+  if (c === 'bad') return isLearn() ? `<button data-reveal="${id}" title="Afficher la valeur attendue (0 point)">?</button>` : '✗';
+  return '';
+}
+/** Champ de saisie élève. */
+function F(id) {
+  if (!DEF[id]) return '';
+  const f = fs(id), c = fieldCls(id), locked = !isLearn() && S.submitted;
+  // Bouton ± pour les valeurs signées (le clavier décimal des téléphones n'a pas de signe moins)
+  const pm = !locked && (DEF[id].kind === 'err' || DEF[id].kind === 'dd') ? `<button type="button" class="pm" data-pm="${id}" tabindex="-1" aria-label="Changer le signe de ${esc(DEF[id].label)}">±</button>` : '';
+  return `<span class="fw">${pm}<input class="fld ${c}" id="f_${id}" data-f="${id}" value="${esc(f.v)}" inputmode="decimal" autocomplete="off" spellcheck="false" aria-label="${esc(DEF[id].label)}" ${locked ? 'disabled' : ''}><span class="mk ${c}" id="m_${id}">${markHTML(id)}</span></span>`;
+}
+function paintField(id) {
+  const inp = document.getElementById('f_' + id); if (!inp) return;
+  const c = fieldCls(id);
+  inp.className = 'fld ' + c;
+  const mk = document.getElementById('m_' + id); mk.className = 'mk ' + c; mk.innerHTML = markHTML(id);
+}
+const svf = (id, d) => fmt(sv(id), d);
+/** Cellule de tableau étiquetée (l'étiquette s'affiche dans les fiches mobiles). */
+const td = (l, c, cls = '') => `<td${l ? ` data-l="${l}"` : ''} class="${cls}">${c}</td>`;
+const tdx = () => '<td class="x"></td>';
+const live = key => `<span data-live="${key}">${liveVal(key)}</span>`;
+/** Valeurs recalculées en direct à partir des saisies de l'élève. */
+function liveVal(key) {
+  const [t, a] = key.split(':'), i = +a, n = SCN.n, N = n + 1;
+  const sumOf = pre => { let s = 0; for (let j = 0; j < n; j++) { const v = sv(pre + '_' + j); if (!isFinite(v)) return NaN; s += v; } return s; };
+  switch (t) {
+    case 'gback': { if (i === 0) return svf('g0', 4); const g = sv(`gb_${i - 1}`); return fmt(isFinite(g) ? norm400(g + 200) : NaN, 4); }
+    case 'val': return svf(a, a.startsWith('dh') || a.startsWith('f') && a !== 'fa' ? 3 : 4);
+    case 'acorr': { const f = sv('fa'); return isFinite(f) ? fmt(-f * (i + 1) / N, 4) : '—'; }
+    case 'sum': return fmt(sumOf(a), 3);
+    case 'corr': { // corrections de compensation : cx, cy, cz du côté j
+      const [axis, j] = a.split('_'), f = sv('f' + axis), L = sumOf('dh'), dh = sv('dh_' + j);
+      return fmt(isFinite(f) && isFinite(L) && isFinite(dh) && L > 0 ? -f * dh / L : NaN, 3);
+    }
+    case 'verdict': {
+      if (!EXP) return '';
+      const v = Math.abs(sv(a)), T = { fa: EXP.meta.Ta, fp: EXP.meta.Tp, fz: EXP.meta.Tz }[a];
+      if (!isFinite(v)) return '<span class="verdict">à calculer</span>';
+      return v <= T ? '<span class="verdict in">dans la tolérance</span>' : '<span class="verdict out">hors tolérance</span>';
+    }
+  }
+  return '';
+}
+function refreshLive() { $$('[data-live]').forEach(el => { el.innerHTML = liveVal(el.dataset.live); }); }
+
+function stepShell(k, title, intro, hint, body) {
+  const ids = DEFS.filter(d => d.step === k).length;
+  return `<div class="stephead"><h2>${title}</h2><p>${intro}</p></div>
+    ${isLearn() ? `<details class="hint" ${window.innerWidth > 760 ? 'open' : ''}><summary>Rappel de cours</summary>${hint}</details>` : ''}
+    ${body}
+    <div class="actions">
+      ${isLearn() && ids ? `<button data-act="check">Vérifier l'étape</button><button class="ghost" data-act="reveal">Afficher la correction de l'étape</button>` : ''}
+      ${k < 6 ? `<button class="primary" data-act="next">Étape suivante →</button>` : ''}
+    </div>`;
+}
+
+function renderStep2() {
+  const n = SCN.n;
+  let rows = '';
+  for (let i = 0; i <= n; i++) for (const w of ['b', 'f']) {
+    const g = S.obs[i + w + 'CG'], d = S.obs[i + w + 'CD'], s = SCN.st[i];
+    const fore = w === 'f', hasZ = fore && i < n;
+    rows += `<tr class="${w === 'b' ? 'grp' : ''}">
+      ${w === 'b' ? `<th rowspan="2" class="rs">${esc(stLabel(i))}<small>Hi ${fmt(s.hi, 3)}</small></th>` : ''}
+      <td class="ttl"><span class="m-only">${esc(stLabel(i))} · </span>${w === 'b' ? 'AR' : 'AV'} ${esc(tg(i, w))}<small>Hp ${fmt(s.sights[w].hp, 3)}<span class="m-only"> · Hi ${fmt(s.hi, 3)}</span></small></td>
+      ${td('Hz CG', fmt(g.hz, 4), 'num')}${td('Hz CD', fmt(d.hz, 4), 'num')}${td('Hz moyen', F(`hz_${i}_${w}`))}${fore ? td('c (gon)', F(`c_${i}`)) : tdx()}
+      ${td('V CG', fmt(g.v, 4), 'num')}${td('V CD', fmt(d.v, 4), 'num')}${hasZ ? td('Z moyen', F(`z_${i}`)) : tdx()}${hasZ ? td('i (gon)', F(`vi_${i}`)) : tdx()}
+      ${td('Di CG', fmt(g.di, 3), 'num')}${td('Di CD', fmt(d.di, 3), 'num')}${hasZ ? td('Dh (m)', F(`dh_${i}`)) : tdx()}</tr>`;
+  }
+  const body = `<div class="tblwrap"><table class="cards"><thead><tr><th>Station</th><th>Visée</th><th>Hz CG</th><th>Hz CD</th><th>Hz moyen</th><th>c (gon)</th><th>V CG</th><th>V CD</th><th>Z moyen</th><th>i (gon)</th><th>Di CG</th><th>Di CD</th><th>Dh (m)</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  const hint = `<ul>
+    <li><b>Hz moyen</b> : on ramène la lecture CD en CG (± 200 gon) puis on fait la moyenne : Hz = [Hz<sub>CG</sub> + (Hz<sub>CD</sub> ± 200)] / 2.</li>
+    <li><b>Collimation horizontale</b> : c = [Hz<sub>CG</sub> − (Hz<sub>CD</sub> ± 200)] / 2. La double retourne l'élimine de la moyenne.</li>
+    <li><b>Angle zénithal moyen</b> : Z = (V<sub>CG</sub> − V<sub>CD</sub> + 400) / 2.</li>
+    <li><b>Erreur d'index (collimation verticale)</b> : i = (V<sub>CG</sub> + V<sub>CD</sub> − 400) / 2.</li>
+    <li><b>Distance horizontale</b> : Dh = Di<sub>moy</sub> × sin Z (calculatrice en grades).</li></ul>
+    <p>Virgule ou point acceptés. 4 décimales pour les angles, 3 pour les distances. Une valeur fausse affiche « ? » : cliquez-le pour voir la valeur attendue (le champ ne rapporte alors aucun point).</p>`;
+  $('#step2').innerHTML = stepShell(2, 'Réduction des observations', 'Moyennez les lectures cercle gauche / cercle droit, détectez les erreurs de collimation et d\'index de l\'instrument, puis calculez les distances horizontales des visées avant.', hint, body);
+}
+
+function renderStep3() {
+  const n = SCN.n, N = n + 1, P = SCN.pts, s0 = nm(0), sn = nm(n), rs = SCN.refStart, re = SCN.refEnd;
+  const dxy = (A, B) => isLearn() ? `<span class="math">ΔX = ${fmt(P[B].x - P[A].x, 3)} m · ΔY = ${fmt(P[B].y - P[A].y, 3)} m</span>` : '';
+  let body = `<div class="refgrid">
+      <div class="refcell"><span class="lbl">Gisement de départ G(${s0} → ${rs})</span>${dxy(s0, rs)}${F('g0')}</div>
+      <div class="refcell"><span class="lbl">Gisement de fermeture G(${sn} → ${re}) connu</span>${dxy(sn, re)}${F('gend')}</div></div>`;
+  let rows = '';
+  for (let i = 0; i <= n; i++) {
+    rows += `<tr><th class="ttl">Station ${esc(stLabel(i))}</th>${td('Visée AR', esc(tg(i, 'b')))}${td('G arrière', live('gback:' + i), 'num')}${td('Hz moy. AR', svf(`hz_${i}_b`, 4), 'num')}${td('V0 station', F(`v0_${i}`))}
+      ${td('Visée AV', esc(tg(i, 'f')))}${td('Hz moy. AV', svf(`hz_${i}_f`, 4), 'num')}${td('G avant brut', F(`gb_${i}`))}</tr>`;
+  }
+  body += `<div class="tblwrap"><table class="cards"><thead><tr><th>Station</th><th>Visée AR</th><th>G arrière</th><th>Hz moy. AR</th><th>V0 station</th><th>Visée AV</th><th>Hz moy. AV</th><th>G avant brut</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  body += `<div class="fbox">
+      <div class="fi"><span>G calculé ${sn} → ${re}</span><span class="num">${live('val:gb_' + n)}</span></div>
+      <div class="fi"><span>G connu</span><span class="num">${live('val:gend')}</span></div>
+      <div class="fi"><span>fα = G calculé − G connu</span>${F('fa')}<span>gon</span></div>
+      <div class="fi"><span>Tα = 2,7 × 1 mgon × √${N} = ${fmt(EXP.meta.Ta, 4)} gon</span>${live('verdict:fa')}</div></div>`;
+  let legs = '';
+  for (let i = 0; i < n; i++) legs += `<tr><th class="ttl">${esc(legLabel(i))}</th>${td('G brut', live('val:gb_' + i), 'num')}${isLearn() ? td('Correction', live('acorr:' + i), 'num') : ''}${td('G compensé', F(`gc_${i}`))}</tr>`;
+  body += `<h3>Compensation angulaire</h3><div class="tblwrap"><table class="cards"><thead><tr><th>Côté</th><th>G brut</th>${isLearn() ? '<th>Correction −fα·k/N</th>' : ''}<th>G compensé</th></tr></thead><tbody>${legs}</tbody></table></div>`;
+  const hint = `<ul>
+    <li><b>Gisement</b> : G<sub>AB</sub> = arctan(ΔX / ΔY), ramené dans le bon quadrant (ΔX = X<sub>B</sub> − X<sub>A</sub>, ΔY = Y<sub>B</sub> − Y<sub>A</sub>).</li>
+    <li><b>V0 de station</b> = G<sub>arrière</sub> − Hz<sub>arrière</sub> (modulo 400 gon).</li>
+    <li><b>Gisement avant</b> = V0 + Hz<sub>avant</sub>. À la station suivante : G<sub>arrière</sub> = G<sub>avant précédent</sub> ± 200.</li>
+    <li><b>Fermeture</b> : fα = G calculé − G connu, tolérance Tα = 2,7 · σ · √N (N = ${N} stations).</li>
+    <li><b>Compensation</b> : chaque station reçoit −fα / N ; le côté k (k = 1…${n}) est corrigé de −fα · k / N.</li></ul>`;
+  $('#step3').innerHTML = stepShell(3, 'Orientation et gisements', 'Calculez le gisement de départ à partir des coordonnées, transmettez les gisements de station en station par les V0, contrôlez la fermeture angulaire puis compensez.', hint, body);
+}
+
+function renderStep4() {
+  const n = SCN.n, P = SCN.pts, A = P[nm(0)], B = P[nm(n)];
+  let rows = '';
+  for (let i = 0; i < n; i++) {
+    const s = SCN.st[i], o = EXP.meta.red[i].f;
+    rows += `<tr><th class="ttl">${esc(legLabel(i))}</th>${td('G compensé', svf(`gc_${i}`, 4), 'num')}${td('Dh', svf(`dh_${i}`, 3), 'num')}${td('ΔX', F(`dx_${i}`))}${td('ΔY', F(`dy_${i}`))}
+      ${td('Di moy.', fmt(o.di, 3), 'num')}${td('Z moy.', svf(`z_${i}`, 4), 'num')}${td('Hi', fmt(s.hi, 3), 'num')}${td('Hp', fmt(s.sights.f.hp, 3), 'num')}${td('ΔZ', F(`dz_${i}`))}</tr>`;
+  }
+  const body = `<div class="tblwrap"><table class="cards"><thead><tr><th>Côté</th><th>G compensé</th><th>Dh</th><th>ΔX</th><th>ΔY</th><th>Di moy.</th><th>Z moy.</th><th>Hi</th><th>Hp</th><th>ΔZ</th></tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr><td class="ttl">Σ (vos valeurs)</td>${tdx()}${td('ΣDh', live('sum:dh'), 'num')}${td('ΣΔX', live('sum:dx'), 'num')}${td('ΣΔY', live('sum:dy'), 'num')}<td colspan="4" class="x"></td>${td('ΣΔZ', live('sum:dz'), 'num')}</tr>
+    <tr><td colspan="3" class="ttl">Arrivée − départ (connus)</td>${td('ΔX', fmt(B.x - A.x, 3), 'num')}${td('ΔY', fmt(B.y - A.y, 3), 'num')}<td colspan="4" class="x"></td>${td('ΔZ', fmt(B.z - A.z, 3), 'num')}</tr></tfoot></table></div>
+    <div class="fbox">
+      <div class="fi"><span>fx</span>${F('fx')}<span>m</span></div>
+      <div class="fi"><span>fy</span>${F('fy')}<span>m</span></div>
+      <div class="fi"><span>fp = √(fx² + fy²)</span>${F('fp')}<span>m</span></div>
+      <div class="fi"><span>Tp = ${fmt(EXP.meta.Tp, 3)} m</span>${live('verdict:fp')}</div>
+    </div>
+    <div class="fbox">
+      <div class="fi"><span>fz</span>${F('fz')}<span>m</span></div>
+      <div class="fi"><span>Tz = 2,7 × 5 mm × √${n} = ${fmt(EXP.meta.Tz, 3)} m</span>${live('verdict:fz')}</div>
+    </div>`;
+  const hint = `<ul>
+    <li><b>Projections</b> : ΔX = Dh · sin G ; ΔY = Dh · cos G (gisements compensés).</li>
+    <li><b>Dénivelée</b> : ΔZ = Di · cos Z + Hi − Hp (visée avant de chaque station).</li>
+    <li><b>Fermetures</b> : fx = ΣΔX − (X<sub>arrivée</sub> − X<sub>départ</sub>), idem pour fy et fz. ${SCN.p.type === 'F' ? 'Cheminement fermé : l\'arrivée est le départ, donc fx = ΣΔX.' : ''}</li>
+    <li><b>Fermeture planimétrique</b> : fp = √(fx² + fy²). Tolérance pédagogique Tp = L / 5000 (au moins 2 cm), L = longueur du cheminement.</li></ul>`;
+  $('#step4').innerHTML = stepShell(4, 'Coordonnées approchées et altitudes', 'Calculez les projections de chaque côté et les dénivelées, puis les écarts de fermeture planimétrique et altimétrique.', hint, body);
+}
+
+function renderStep5() {
+  const n = SCN.n, P = SCN.pts, B = P[nm(n)];
+  let rows = '';
+  for (let i = 0; i < n; i++) {
+    const end = i + 1 < n;
+    rows += `<tr><th class="ttl">${esc(legLabel(i))}<span class="m-only"> · point ${esc(nm(i + 1))}</span></th>${td('Dh', svf(`dh_${i}`, 3), 'num')}
+      ${isLearn() ? td('cx', live('corr:x_' + i), 'num') + td('cy', live('corr:y_' + i), 'num') + td('cz', live('corr:z_' + i), 'num') : ''}
+      <th class="rs">${esc(nm(i + 1))}</th>
+      ${end ? td('X compensé', F(`X_${i + 1}`)) + td('Y compensé', F(`Y_${i + 1}`)) + td('Z compensé', F(`Z_${i + 1}`))
+            : td('X (connu)', fmt(B.x, 3), 'num') + td('Y (connu)', fmt(B.y, 3), 'num') + td('Z (connu)', fmt(B.z, 3), 'num')}</tr>`;
+  }
+  const body = `<div class="tblwrap"><table class="cards"><thead><tr><th>Côté</th><th>Dh</th>${isLearn() ? '<th>cx</th><th>cy</th><th>cz</th>' : ''}<th>Point</th><th>X compensé</th><th>Y compensé</th><th>Z compensé</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="note">Départ ${esc(nm(0))} : X = ${fmt(P[nm(0)].x, 3)} · Y = ${fmt(P[nm(0)].y, 3)} · Z = ${fmt(P[nm(0)].z, 3)}. La dernière ligne doit redonner exactement le point d'arrivée connu.</p>`;
+  const hint = `<ul>
+    <li><b>Compensation proportionnelle aux distances</b> : c<sub>x,k</sub> = −fx · Dh<sub>k</sub> / ΣDh ; idem pour c<sub>y</sub> (avec fy) et c<sub>z</sub> (avec fz).</li>
+    <li><b>Coordonnées</b> : X<sub>k</sub> = X<sub>k−1</sub> + ΔX<sub>k</sub> + c<sub>x,k</sub> ; idem pour Y et Z.</li>
+    <li><b>Contrôle</b> : la somme des corrections vaut −fx (−fy, −fz) ; on retombe sur le point d'arrivée.</li></ul>
+    <p>Les colonnes cx, cy, cz sont calculées en direct à partir de vos fermetures et de vos Dh.</p>`;
+  $('#step5').innerHTML = stepShell(5, 'Compensation du cheminement', 'Répartissez les écarts de fermeture proportionnellement aux longueurs des côtés et déterminez les coordonnées définitives des stations nouvelles.', hint, body);
+}
+
+function renderStep6() {
+  const n = SCN.n, M = EXP.meta, lp = lecturePct(), pts = calcPoints(), tot = DEFS.length;
+  const ok = (v, T) => Math.abs(v) <= T ? '<span class="verdict in">tolérée</span>' : '<span class="verdict out">hors tolérance</span>';
+  const done = !isLearn() && S.submitted;
+  const showExact = isLearn() || done;
+  let h = `<div class="stephead"><h2>${isLearn() ? 'Bilan de l\'exercice' : 'Rapport d\'examen'}</h2><p>${isLearn() ? 'Synthèse de vos lectures et de vos calculs. Vous pouvez revenir à n\'importe quelle étape pour compléter.' : done ? 'Copie remise : les champs sont verrouillés et corrigés.' : 'Vérifiez votre copie puis remettez-la. Après la remise, plus aucune modification n\'est possible.'}</p></div>`;
+  if (!isLearn() && !done) {
+    const filled = DEFS.filter(d => S.fields[d.id]?.v).length;
+    h += `<div class="tiles"><div class="tile"><b>${filled} / ${tot}</b><small>Champs remplis</small></div><div class="tile"><b>${lp == null ? '—' : Math.round(lp * 100) + ' %'}</b><small>Qualité des lectures</small></div></div>
+      <div class="actions"><button class="primary" data-act="submit">Remettre la copie</button></div>`;
+    $('#step6').innerHTML = h; return;
+  }
+  h += `<div class="tiles">
+    <div class="tile main"><b>${fmt(noteSur20(), 1)}</b><small>Note / 20</small></div>
+    <div class="tile"><b>${lp == null ? '—' : Math.round(lp * 100) + ' %'}</b><small>Lectures (30 %)</small></div>
+    <div class="tile"><b>${fmt(pts, pts % 1 ? 1 : 0)} / ${tot}</b><small>Calculs (70 %)</small></div>
+    <div class="tile"><b>${Math.round(100 * DEFS.filter(d => S.fields[d.id]?.ok).length / tot)} %</b><small>Champs justes</small></div></div>`;
+  // Détail par étape
+  h += `<h3>Détail par étape</h3><div class="tblwrap"><table class="tbl-sm"><thead><tr><th>Étape</th><th>Justes</th><th>Faux</th><th>Vides</th><th>Corrigés</th></tr></thead><tbody>`;
+  for (const k of [2, 3, 4, 5]) {
+    const ds = DEFS.filter(d => d.step === k);
+    const c = { j: 0, f: 0, v: 0, r: 0 };
+    ds.forEach(d => { const f = S.fields[d.id]; if (!f || !f.v) c.v++; else if (f.rev) c.r++; else if (f.ok) c.j++; else c.f++; });
+    h += `<tr><td>${k} · ${STEPS[k]}</td><td class="num">${c.j}</td><td class="num">${c.f}</td><td class="num">${c.v}</td><td class="num">${c.r}</td></tr>`;
+  }
+  h += `</tbody></table></div>`;
+  // Fermetures
+  h += `<h3>Fermetures</h3><div class="tblwrap"><table class="tbl-sm"><thead><tr><th></th><th>Votre valeur</th><th>Valeur exacte</th><th>Tolérance</th><th>Verdict</th></tr></thead><tbody>
+    <tr><td>fα (gon)</td><td class="num">${svf('fa', 4)}</td><td class="num">${fmt(EXP.fa, 4)}</td><td class="num">${fmt(M.Ta, 4)}</td><td>${ok(EXP.fa, M.Ta)}</td></tr>
+    <tr><td>fp (m)</td><td class="num">${svf('fp', 3)}</td><td class="num">${fmt(EXP.fp, 3)}</td><td class="num">${fmt(M.Tp, 3)}</td><td>${ok(EXP.fp, M.Tp)}</td></tr>
+    <tr><td>fz (m)</td><td class="num">${svf('fz', 3)}</td><td class="num">${fmt(EXP.fz, 3)}</td><td class="num">${fmt(M.Tz, 3)}</td><td>${ok(EXP.fz, M.Tz)}</td></tr>
+    </tbody></table></div><p class="note">Précision relative planimétrique : 1 / ${EXP.fp > 0 ? Math.round(M.L / EXP.fp).toLocaleString('fr-FR') : '∞'} sur L = ${fmt(M.L, 3)} m.</p>`;
+  // Instrument : erreurs injectées vs détectées
+  const cs = [], is = [];
+  for (let i = 0; i <= n; i++) { cs.push(EXP[`c_${i}`]); if (i < n) is.push(EXP[`vi_${i}`]); }
+  const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
+  h += `<h3>Erreurs instrumentales</h3><div class="tblwrap"><table class="tbl-sm"><thead><tr><th></th><th>Injectée dans le simulateur</th><th>Moyenne détectée par double retourne</th></tr></thead><tbody>
+    <tr><td>Collimation horizontale c</td><td class="num">${fmt(SCN.inst.c * 1000, 1)} mgon</td><td class="num">${fmt(mean(cs) * 1000, 1)} mgon</td></tr>
+    <tr><td>Erreur d'index i</td><td class="num">${fmt(SCN.inst.i * 1000, 1)} mgon</td><td class="num">${fmt(mean(is) * 1000, 1)} mgon</td></tr></tbody></table></div>`;
+  // Coordonnées définitives
+  if (showExact) {
+    h += `<h3>Coordonnées définitives</h3><div class="tblwrap"><table class="tbl-sm"><thead><tr><th>Point</th><th>X attendu</th><th>Y attendu</th><th>Z attendu</th><th>Vos valeurs</th></tr></thead><tbody>`;
+    for (let k = 1; k < n; k++) {
+      const good = ['X', 'Y', 'Z'].every(a => S.fields[`${a}_${k}`]?.ok);
+      h += `<tr><th>${esc(nm(k))}</th><td class="num">${fmt(EXP['X_' + k], 3)}</td><td class="num">${fmt(EXP['Y_' + k], 3)}</td><td class="num">${fmt(EXP['Z_' + k], 3)}</td><td>${good ? '<span class="verdict in">justes</span>' : '<span class="verdict">à revoir</span>'}</td></tr>`;
+    }
+    h += `</tbody></table></div>`;
+  }
+  // Liste des erreurs (examen corrigé)
+  if (done) {
+    const errs = DEFS.filter(d => !S.fields[d.id]?.ok);
+    h += `<h3>Champs faux ou vides (${errs.length})</h3>`;
+    h += errs.length ? `<ul class="errlist">${errs.map(d => `<li>${esc(d.label)} : saisi <code>${esc(S.fields[d.id]?.v || '—')}</code>, attendu <code>${fmt(EXP[d.id], KINDS[d.kind].dec)}</code></li>`).join('')}</ul>` : '<p>Aucune erreur. Bravo !</p>';
+  }
+  h += `<div class="actions"><button data-act="copyReport">Copier le rapport</button><button class="primary" data-act="newEx">Nouvel exercice</button></div>`;
+  $('#step6').innerHTML = h;
+}
+function reportText() {
+  const lp = lecturePct();
+  const lines = [`Cheminement polygonal ${SCN.p.type === 'F' ? 'fermé' : 'encadré'} · code ${makeCode(SCN.p)} · ${isLearn() ? 'apprentissage' : 'examen'}`,
+    `Note : ${fmt(noteSur20(), 1)} / 20`, `Lectures : ${lp == null ? '—' : Math.round(lp * 100) + ' %'}`, `Calculs : ${fmt(calcPoints(), 1)} / ${DEFS.length}`,
+    `fα = ${fmt(EXP.fa, 4)} gon (T = ${fmt(EXP.meta.Ta, 4)}) · fp = ${fmt(EXP.fp, 3)} m (T = ${fmt(EXP.meta.Tp, 3)}) · fz = ${fmt(EXP.fz, 3)} m (T = ${fmt(EXP.meta.Tz, 3)})`, '', 'Champs faux ou vides :'];
+  for (const d of DEFS) if (!S.fields[d.id]?.ok) lines.push(`- ${d.label} : saisi ${S.fields[d.id]?.v || '—'} ; attendu ${fmt(EXP[d.id], KINDS[d.kind].dec)}`);
+  return lines.join('\n');
+}
+
+/* =====================================================================
+   9. VUE EN PLAN (Canvas)
+   ===================================================================== */
+function tok() {
+  const cs = getComputedStyle(document.documentElement), g = n => cs.getPropertyValue(n).trim();
+  return { bg: g('--map-bg'), grid: g('--map-grid'), ink: g('--ink'), muted: g('--muted'), accent: g('--accent'), known: g('--known'), brute: g('--brute'), ok: g('--ok'), bad: g('--bad'), mono: g('--f-mono') };
+}
+function niceStep(v) { const p = Math.pow(10, Math.floor(Math.log10(v))); for (const m of [1, 2, 5, 10]) if (m * p >= v) return m * p; return 10 * p; }
+/** Traverse « calculée » à partir des saisies de l'élève (ΔX/ΔY, sinon G et Dh). */
+function studentTraverse() {
+  const n = SCN.n, A = SCN.pts[nm(0)];
+  const brute = [{ x: A.x, y: A.y }]; let x = A.x, y = A.y;
+  for (let i = 0; i < n; i++) {
+    let dx = sv(`dx_${i}`), dy = sv(`dy_${i}`);
+    if (!isFinite(dx) || !isFinite(dy)) {
+      const g = isFinite(sv(`gc_${i}`)) ? sv(`gc_${i}`) : sv(`gb_${i}`), d = sv(`dh_${i}`);
+      if (!isFinite(g) || !isFinite(d)) break;
+      dx = d * Math.sin(g * GON); dy = d * Math.cos(g * GON);
+    }
+    x += dx; y += dy; brute.push({ x, y });
+  }
+  const comp = [{ x: A.x, y: A.y }];
+  for (let k = 1; k < n; k++) { const X = sv(`X_${k}`), Y = sv(`Y_${k}`); if (!isFinite(X) || !isFinite(Y)) break; comp.push({ x: X, y: Y }); }
+  if (comp.length === n) comp.push({ x: SCN.pts[nm(n)].x, y: SCN.pts[nm(n)].y });
+  return { brute, comp };
+}
+function drawMap() {
+  if (!SCN) return;
+  const cv = $('#map'), W = Math.max(260, cv.clientWidth || 400), H = Math.round(W * 0.8), dpr = window.devicePixelRatio || 1;
+  cv.width = W * dpr; cv.height = H * dpr; cv.style.height = H + 'px';
+  const c = cv.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const T = tok(), TAU = Math.PI * 2;
+  c.fillStyle = T.bg; c.fillRect(0, 0, W, H);
+  const names = [...new Set(SCN.seq)], Q = names.map(k => SCN.croquis[k]);
+  const xs = Q.map(q => q.x), ys = Q.map(q => q.y);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys), pad = 46;
+  const s = Math.min((W - 2 * pad) / Math.max(x1 - x0, 30), (H - 2 * pad) / Math.max(y1 - y0, 30));
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  const toS = q => [W / 2 + (q.x - cx) * s, H / 2 - (q.y - cy) * s];
+  // Quadrillage en croix (comme sur un plan topographique)
+  const gs = niceStep(70 / s);
+  c.strokeStyle = T.grid; c.fillStyle = T.muted; c.lineWidth = 1; c.font = `10px ${T.mono}`;
+  const wx0 = cx - W / 2 / s, wx1 = cx + W / 2 / s, wy0 = cy - H / 2 / s, wy1 = cy + H / 2 / s;
+  for (let gx = Math.ceil(wx0 / gs) * gs; gx <= wx1; gx += gs) {
+    for (let gy = Math.ceil(wy0 / gs) * gs; gy <= wy1; gy += gs) {
+      const [px, py] = toS({ x: gx, y: gy });
+      c.beginPath(); c.moveTo(px - 5, py); c.lineTo(px + 5, py); c.moveTo(px, py - 5); c.lineTo(px, py + 5); c.stroke();
+    }
+    const [px] = toS({ x: gx, y: 0 }); c.textAlign = 'center'; c.fillText(String(Math.round(gx)), px, H - 5);
+  }
+  c.textAlign = 'left';
+  for (let gy = Math.ceil(wy0 / gs) * gs; gy <= wy1; gy += gs) { const [, py] = toS({ x: 0, y: gy }); c.fillText(String(Math.round(gy)), 4, py - 3); }
+  // Directions vers les références (souvent hors cadre)
+  const drawRef = (from, ref) => {
+    const A = SCN.pts[from], Rp = SCN.pts[ref];
+    const [ax, ay] = toS(A); let [bx, by] = toS(Rp);
+    const inside = bx > 12 && bx < W - 12 && by > 12 && by < H - 12;
+    if (!inside) {
+      let t = 1; const dx = bx - ax, dy = by - ay;
+      if (bx < 14) t = Math.min(t, (14 - ax) / dx); if (bx > W - 14) t = Math.min(t, (W - 14 - ax) / dx);
+      if (by < 14) t = Math.min(t, (14 - ay) / dy); if (by > H - 14) t = Math.min(t, (H - 14 - ay) / dy);
+      bx = ax + dx * t; by = ay + dy * t;
+    }
+    c.setLineDash([2, 4]); c.strokeStyle = T.known; c.lineWidth = 1;
+    c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke(); c.setLineDash([]);
+    if (inside) { c.beginPath(); c.arc(bx, by, 6, 0, TAU); c.stroke(); c.beginPath(); c.moveTo(bx - 8, by); c.lineTo(bx + 8, by); c.moveTo(bx, by - 8); c.lineTo(bx, by + 8); c.stroke(); }
+    else {
+      const ang = Math.atan2(by - ay, bx - ax);
+      c.fillStyle = T.known; c.beginPath(); c.moveTo(bx, by);
+      c.lineTo(bx - 9 * Math.cos(ang - 0.4), by - 9 * Math.sin(ang - 0.4)); c.lineTo(bx - 9 * Math.cos(ang + 0.4), by - 9 * Math.sin(ang + 0.4)); c.closePath(); c.fill();
+    }
+    label(ref + (inside ? '' : ' (' + Math.round(dist2D(A, Rp)) + ' m)'), bx, by, T.known, ang0(bx, by));
+  };
+  const ang0 = (x, y) => [x > W - 90 ? -1 : 1, y < 20 ? 1 : -1];
+  function label(txt, x, y, col, dir = [1, -1]) {
+    c.font = `600 12px ${T.mono}`; c.textAlign = dir[0] > 0 ? 'left' : 'right';
+    const lx = x + dir[0] * 8, ly = y + (dir[1] > 0 ? 14 : -7);
+    c.lineWidth = 3; c.strokeStyle = T.bg; c.strokeText(txt, lx, ly); c.fillStyle = col; c.fillText(txt, lx, ly);
+    c.textAlign = 'left';
+  }
+  drawRef(nm(0), SCN.refStart);
+  if (SCN.p.type === 'E') drawRef(nm(SCN.n), SCN.refEnd);
+  // Croquis de terrain
+  c.setLineDash([5, 4]); c.strokeStyle = T.muted; c.lineWidth = 1.2; c.beginPath();
+  SCN.seq.forEach((k, i) => { const [x, y] = toS(SCN.croquis[k]); i ? c.lineTo(x, y) : c.moveTo(x, y); }); c.stroke(); c.setLineDash([]);
+  // Visées de la station courante (pendant le terrain)
+  if (S.step === 1) {
+    const [ax, ay] = toS(SCN.croquis[nm(S.st)]);
+    for (const w of ['b', 'f']) {
+      const tgt = tg(S.st, w); if (tgt.startsWith('R')) continue;
+      const [bx, by] = toS(SCN.croquis[tgt]);
+      c.strokeStyle = T.accent; c.lineWidth = w === S.target ? 2.5 : 1; c.globalAlpha = w === S.target ? 1 : 0.5;
+      c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke(); c.globalAlpha = 1;
+    }
+  }
+  // Cheminement calculé par l'élève et cheminement compensé
+  const { brute, comp } = studentTraverse();
+  const poly = (pts, col, w) => { if (pts.length < 2) return; c.strokeStyle = col; c.lineWidth = w; c.beginPath(); pts.forEach((q, i) => { const [x, y] = toS(q); i ? c.lineTo(x, y) : c.moveTo(x, y); }); c.stroke(); };
+  poly(brute, T.brute, 1.6);
+  brute.slice(1).forEach(q => { const [x, y] = toS(q); c.fillStyle = T.brute; c.fillRect(x - 2.5, y - 2.5, 5, 5); });
+  poly(comp, T.accent, 2.6);
+  // Points : stations visitées, points connus
+  names.forEach(k => {
+    const q = SCN.pts[k], [x, y] = toS(SCN.croquis[k]);
+    const idx = SCN.seq.indexOf(k), visited = SCN.seq.some((kk, i) => kk === k && ORDER.some(o => S.obs[i + o]));
+    if (q.known) {
+      c.fillStyle = T.known; c.beginPath(); c.moveTo(x, y - 8); c.lineTo(x + 7, y + 5); c.lineTo(x - 7, y + 5); c.closePath(); c.fill();
+      c.fillStyle = T.bg; c.beginPath(); c.arc(x, y, 1.8, 0, TAU); c.fill();
+    } else {
+      c.beginPath(); c.arc(x, y, 5, 0, TAU); c.fillStyle = visited ? T.ink : T.bg; c.fill(); c.strokeStyle = T.ink; c.lineWidth = 1.5; c.stroke();
+    }
+    label(k, x, y, q.known ? T.known : T.ink, ang0(x, y));
+    void idx;
+  });
+  // Instrument en station (trépied)
+  if (S.step === 1) {
+    const [x, y] = toS(SCN.croquis[nm(S.st)]);
+    c.strokeStyle = T.accent; c.lineWidth = 2;
+    c.beginPath(); c.arc(x, y, 11, 0, TAU); c.stroke();
+    c.beginPath(); for (const a of [90, 210, 330]) { const r = a * Math.PI / 180; c.moveTo(x, y); c.lineTo(x + 17 * Math.cos(r), y + 17 * Math.sin(r)); } c.stroke();
+  }
+  // Flèche du Nord et échelle
+  c.fillStyle = T.ink; c.strokeStyle = T.ink; c.lineWidth = 1.5;
+  c.beginPath(); c.moveTo(W - 22, 14); c.lineTo(W - 28, 34); c.lineTo(W - 22, 29); c.lineTo(W - 16, 34); c.closePath(); c.fill();
+  c.font = `700 11px ${T.mono}`; c.textAlign = 'center'; c.fillText('N', W - 22, 46); c.textAlign = 'left';
+  const sb = niceStep(90 / s), sbp = sb * s;
+  c.beginPath(); c.moveTo(12, H - 22); c.lineTo(12 + sbp, H - 22); c.moveTo(12, H - 26); c.lineTo(12, H - 18); c.moveTo(12 + sbp, H - 26); c.lineTo(12 + sbp, H - 18); c.stroke();
+  c.font = `11px ${T.mono}`; c.fillText(sb + ' m', 16 + sbp, H - 18);
+  // Loupe sur l'écart de fermeture planimétrique
+  if (EXP && S.step >= 4) {
+    let fx = sv('fx'), fy = sv('fy');
+    if ((!isFinite(fx) || !isFinite(fy)) && brute.length === SCN.n + 1) { const e = brute[SCN.n], B = SCN.pts[nm(SCN.n)]; fx = e.x - B.x; fy = e.y - B.y; }
+    if (isFinite(fx) && isFinite(fy)) {
+      const R0 = 42, ix = W - R0 - 12, iy = H - R0 - 26, Tp = EXP.meta.Tp, fp = Math.hypot(fx, fy);
+      const k = (R0 - 6) / Math.max(Tp, fp, 1e-6);
+      c.fillStyle = T.bg; c.strokeStyle = T.muted; c.lineWidth = 1;
+      c.beginPath(); c.arc(ix, iy, R0, 0, TAU); c.fill(); c.stroke();
+      c.setLineDash([3, 3]); c.strokeStyle = fp <= Tp ? T.ok : T.bad; c.beginPath(); c.arc(ix, iy, Tp * k, 0, TAU); c.stroke(); c.setLineDash([]);
+      c.strokeStyle = T.accent; c.lineWidth = 2; c.beginPath(); c.moveTo(ix, iy); c.lineTo(ix + fx * k, iy - fy * k); c.stroke();
+      c.fillStyle = T.accent; c.beginPath(); c.arc(ix + fx * k, iy - fy * k, 3, 0, TAU); c.fill();
+      c.fillStyle = T.ink; c.font = `600 10px ${T.mono}`; c.textAlign = 'center';
+      c.fillText(`fp ${Math.round(fp * 1000)} mm / T ${Math.round(Tp * 1000)}`, ix, iy + R0 + 13); c.textAlign = 'left';
+    }
+  }
+  $('#mapInfo').textContent = `Quadrillage ${gs} m`;
+}
+
+/* =====================================================================
+   10. PANNEAUX LATÉRAUX, NAVIGATION, SCÉNARIO
+   ===================================================================== */
+function renderKnown() {
+  let h = '<table class="tbl-sm"><thead><tr><th>Point</th><th>X (m)</th><th>Y (m)</th><th>Z (m)</th></tr></thead><tbody>';
+  for (const [k, q] of Object.entries(SCN.pts)) if (q.known) h += `<tr><th>${k}<small>${esc(q.role)}</small></th><td class="num">${fmt(q.x, 3)}</td><td class="num">${fmt(q.y, 3)}</td><td class="num">${k.startsWith('R') ? '—' : fmt(q.z, 3)}</td></tr>`;
+  $('#knownTbl').innerHTML = h + '</tbody></table>';
+}
+function renderClosure() {
+  if (!EXP) { $('#closureBox').innerHTML = `<p class="note">Les fermetures s'afficheront quand le carnet de terrain sera complet (${Object.keys(S.obs).length} / ${(SCN.n + 1) * 4} lectures).</p>`; return; }
+  const M = EXP.meta;
+  const row = (lab, id, d, T, u) => `<span>${lab}</span><span class="num mono">${svf(id, d)} ${u}<small>T = ${fmt(T, d)}</small></span>${liveVal('verdict:' + id)}`;
+  $('#closureBox').innerHTML = `<div class="clos">${row('Angulaire fα', 'fa', 4, M.Ta, 'gon')}${row('Planimétrique fp', 'fp', 3, M.Tp, 'm')}${row('Altimétrique fz', 'fz', 3, M.Tz, 'm')}</div>
+    <p class="note">Valeurs issues de vos saisies. Longueur du cheminement ≈ ${Math.round(M.L)} m, ${M.N} stations.</p>`;
+}
+function stepProgress(k) {
+  if (k === 1) { const c = Object.keys(S.obs).length, t = (SCN.n + 1) * 4; return { txt: `${c}/${t}`, done: c === t }; }
+  if (k < 2 || k > 5 || !EXP) return { txt: '', done: false };
+  const ds = DEFS.filter(d => d.step === k);
+  const good = ds.filter(d => { const f = S.fields[d.id]; return f && (isLearn() && !S.submitted ? f.ok : f.v); }).length;
+  return { txt: `${good}/${ds.length}`, done: good === ds.length };
+}
+function renderStepper() {
+  $('#stepper').innerHTML = STEPS.map((name, k) => {
+    const locked = k >= 2 && !EXP, pr = stepProgress(k);
+    return `<button data-step="${k}" class="${S.step === k ? 'cur' : ''} ${pr.done ? 'done' : ''}" ${locked ? 'disabled title="Terminez d\'abord le carnet de terrain"' : ''} aria-label="Étape ${k} : ${name}"><span class="sn">${pr.done ? '✓' : k}</span><span class="st">${name}</span>${pr.txt ? `<small>${pr.txt}</small>` : ''}</button>`;
+  }).join('');
+  // Sur mobile, garder l'étape en cours visible dans la barre défilante
+  const sp = $('#stepper'), cur = sp.querySelector('.cur');
+  if (cur && sp.scrollWidth > sp.clientWidth) sp.scrollLeft = cur.offsetLeft - sp.clientWidth / 2 + cur.offsetWidth / 2;
+}
+function showStep(k) {
+  if (k >= 2 && !EXP) { toast('Terminez d\'abord le carnet de terrain.', 'bad'); return; }
+  const changed = S.step !== k;
+  S.step = k;
+  $$('.step').forEach(el => { el.hidden = el.id !== 'step' + k; });
+  if (changed && window.innerWidth <= 1080) $('#work').scrollIntoView({ block: 'start' });
+  $('#btnPas').setAttribute('aria-pressed', !!S.coarse);
+  $('#btnPas').textContent = S.coarse ? 'Pas rapide : 2,5 mgon' : 'Pas fin : 0,25 mgon';
+  if (k === 0) renderStep0();
+  if (k === 1) renderTerrain();
+  if (k === 2) renderStep2();
+  if (k === 3) renderStep3();
+  if (k === 4) renderStep4();
+  if (k === 5) renderStep5();
+  if (k === 6) renderStep6();
+  renderStepper(); drawMap(); save();
+}
+function revealStep(k) {
+  for (const d of DEFS.filter(d => d.step === k)) {
+    const f = fs(d.id); if (f.ok) continue;
+    f.v = fmt(EXP[d.id], KINDS[d.kind].dec); f.rev = true; f.ok = true;
+  }
+  showStep(k); renderHeader(); renderClosure();
+}
+
+/* ---- Scénario : formulaire, codes, saisie manuelle ---- */
+function makeCode(p) {
+  if (p.manual) return 'M.' + btoa(unescape(encodeURIComponent(JSON.stringify(p)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return `${p.type}${p.count}-${p.level}-${p.mode === 'exam' ? 'X' : 'A'}-${p.seed}`;
+}
+function parseCode(code) {
+  code = code.trim();
+  const m = code.match(/^([FE])(\d)-([123])-([AX])-(\d{1,9})$/i);
+  if (m) return { type: m[1].toUpperCase(), count: +m[2], level: +m[3], mode: m[4].toUpperCase() === 'X' ? 'exam' : 'learn', seed: +m[5] };
+  if (code.startsWith('M.')) {
+    try {
+      const p = JSON.parse(decodeURIComponent(escape(atob(code.slice(2).replace(/-/g, '+').replace(/_/g, '/')))));
+      if (p && (p.type === 'F' || p.type === 'E') && p.manual) return p;
+    } catch (e) { /* code invalide */ }
+  }
+  return null;
+}
+const radioVal = name => document.querySelector(`input[name="${name}"]:checked`).value;
+function readForm() {
+  const type = radioVal('ptype');
+  const count = clamp(parseInt($('#pCount').value, 10) || (type === 'F' ? 5 : 3), type === 'F' ? 3 : 1, type === 'F' ? 8 : 6);
+  return { type, count, level: +radioVal('plevel'), mode: radioVal('pmode'), seed: (parseInt($('#pSeed').value, 10) || 1) >>> 0 };
+}
+function syncTypeUI() {
+  const F_ = radioVal('ptype') === 'F';
+  $('#countLbl').textContent = F_ ? 'Nombre de sommets (3 à 8)' : 'Stations intermédiaires (1 à 6)';
+  $('#pCount').min = F_ ? 3 : 1; $('#pCount').max = F_ ? 8 : 6;
+  $$('.encOnly').forEach(el => { el.hidden = F_; });
+  $('#mgStartLbl').textContent = F_ ? 'Point de départ et d\'arrivée (connu)' : 'Point de départ (connu)';
+}
+function renderStep0() {
+  const p = SCN.p;
+  document.querySelector(`input[name="ptype"][value="${p.type}"]`).checked = true;
+  document.querySelector(`input[name="plevel"][value="${p.level}"]`).checked = true;
+  document.querySelector(`input[name="pmode"][value="${p.mode}"]`).checked = true;
+  $('#pCount').value = p.count; $('#pSeed').value = p.seed;
+  $('#curCode').textContent = makeCode(p);
+  syncTypeUI(); prefillManual();
+  const L = LEVELS[p.level];
+  $('#paramsBox').innerHTML = `
+    <div><span class="lbl">Instrument</span><b>σ lecture ≈ ${fmt(L.sig * 1000, 1)} mgon</b><small>EDM : 2 mm + 2 ppm</small></div>
+    <div><span class="lbl">Collimation c et index i</span><b>inconnues</b><small>à détecter par double retourne</small></div>
+    <div><span class="lbl">Pointé initial</span><b>${L.offset ? 'décalé jusqu\'à ' + fmt(L.offset * K_PX * 1000, 0) + ' mgon' : 'centré sur le prisme'}</b><small>1 pixel = 0,25 mgon</small></div>
+    <div><span class="lbl">Notation</span><b>30 % lectures · 70 % calculs</b><small>${p.mode === 'exam' ? 'note révélée à la remise' : '1 pt du premier coup, ½ pt après correction'}</small></div>`;
+}
+function prefillManual() {
+  const P = SCN.pts, a = P[nm(0)], r = P[SCN.refStart], b = P[nm(SCN.n)], q = P[SCN.refEnd];
+  const set = (id, v) => { $(id).value = fmt(v, 3); };
+  set('#mSx', a.x); set('#mSy', a.y); set('#mSz', a.z); set('#mRx', r.x); set('#mRy', r.y);
+  if (SCN.p.type === 'E') { set('#mEx', b.x); set('#mEy', b.y); set('#mEz', b.z); set('#mQx', q.x); set('#mQy', q.y); }
+  else if (!$('#mEx').value) { set('#mEx', a.x + 320); set('#mEy', a.y + 140); set('#mEz', a.z + 4); set('#mQx', a.x + 900); set('#mQy', a.y + 500); }
+}
+function launchManual() {
+  const f = readForm(), g = id => parseNum($(id).value), opt = id => { const v = $(id).value.trim(); return v === '' ? '' : parseNum(v); };
+  const m = { sx: g('#mSx'), sy: g('#mSy'), sz: g('#mSz'), rx: g('#mRx'), ry: g('#mRy'), c: opt('#mC'), i: opt('#mI'), hi: opt('#mHi'), hp: opt('#mHp') };
+  if (f.type === 'E') Object.assign(m, { ex: g('#mEx'), ey: g('#mEy'), ez: g('#mEz'), qx: g('#mQx'), qy: g('#mQy') });
+  const msg = $('#manualMsg');
+  const req = f.type === 'E' ? ['sx', 'sy', 'sz', 'rx', 'ry', 'ex', 'ey', 'ez', 'qx', 'qy'] : ['sx', 'sy', 'sz', 'rx', 'ry'];
+  if (req.some(k => !isFinite(m[k]))) { msg.textContent = 'Complétez toutes les coordonnées des points connus (nombres).'; return; }
+  for (const k of ['c', 'i', 'hi', 'hp']) if (m[k] !== '' && !isFinite(m[k])) { msg.textContent = 'Les paramètres facultatifs doivent être des nombres ou rester vides.'; return; }
+  if (Math.hypot(m.rx - m.sx, m.ry - m.sy) < 50) { msg.textContent = 'La référence de départ doit être à plus de 50 m du départ.'; return; }
+  if (f.type === 'E') {
+    const L = Math.hypot(m.ex - m.sx, m.ey - m.sy);
+    if (L < 60 || L > 3000) { msg.textContent = 'La distance départ → arrivée doit être comprise entre 60 m et 3 km.'; return; }
+    if (Math.hypot(m.qx - m.ex, m.qy - m.ey) < 50) { msg.textContent = 'La référence d\'arrivée doit être à plus de 50 m de l\'arrivée.'; return; }
+  }
+  msg.textContent = '';
+  newScenario({ ...f, seed: Math.floor(Math.random() * 99999) + 1, manual: m });
+}
+function newScenario(p) {
+  SCN = genScenario(p); S = freshState(p); EXP = null; streak = 0;
+  buildDefs(); renderKnown(); renderHeader(); renderClosure();
+  showStep(1);
+  toast(`Nouvel exercice · code ${makeCode(p).slice(0, 24)}`, 'ok');
+}
+
+/* ---- Sauvegarde locale (facultative) ---- */
+const LS_KEY = 'cheminement-polygonal-v1';
+function save() { try { localStorage.setItem(LS_KEY, JSON.stringify(S)); } catch (e) { /* stockage indisponible */ } }
+function load() {
+  try {
+    const st = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
+    if (!st || !st.p || !st.obs) return false;
+    SCN = genScenario(st.p); S = st; buildDefs();
+    if (allComplete()) computeEXP(false);
+    return true;
+  } catch (e) { return false; }
+}
+
+/* ---- Notifications et presse-papiers ---- */
+let toastT = null;
+function toast(msg, kind = '') {
+  const t = $('#toast'); t.textContent = msg; t.className = 'toast show ' + kind;
+  clearTimeout(toastT); toastT = setTimeout(() => { t.className = 'toast'; }, 2600);
+}
+function copyText(txt, okMsg) {
+  try {
+    navigator.clipboard.writeText(txt).then(() => toast(okMsg, 'ok'), () => toast('Copie refusée par le navigateur : sélectionnez le texte à la main.', 'bad'));
+  } catch (e) { toast('Copie indisponible dans ce navigateur.', 'bad'); }
+}
+function carnetTSV() {
+  const L = ['Station\tHi\tPoint visé\tHp\tHz CG\tHz CD\tV CG\tV CD\tDi CG\tDi CD'];
+  for (let i = 0; i <= SCN.n; i++) for (const w of ['b', 'f']) {
+    const g = S.obs[i + w + 'CG'], d = S.obs[i + w + 'CD'], s = SCN.st[i];
+    L.push([stLabel(i), fmt(s.hi, 3), tg(i, w), fmt(s.sights[w].hp, 3), g ? fmt(g.hz, 4) : '', d ? fmt(d.hz, 4) : '', g ? fmt(g.v, 4) : '', d ? fmt(d.v, 4) : '', g ? fmt(g.di, 3) : '', d ? fmt(d.di, 3) : ''].join('\t'));
+  }
+  return L.join('\n');
+}
+
+/* =====================================================================
+   11. ÉVÉNEMENTS
+   ===================================================================== */
+$('#stepper').addEventListener('click', e => { const b = e.target.closest('button[data-step]'); if (b && !b.disabled) showStep(+b.dataset.step); });
+
+// Terrain
+// Oculaire : toucher = pointé grossier sur le point touché ; glisser = déplacer l'image (souris ou doigt)
+const oc = $('#ocular');
+let drag = null;
+oc.addEventListener('pointerdown', e => {
+  try { oc.setPointerCapture(e.pointerId); } catch (err) { /* capture indisponible */ }
+  drag = { x: e.clientX, y: e.clientY, moved: 0, ax: 0, ay: 0 };
+});
+oc.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const r = oc.getBoundingClientRect(), k = 300 / r.width;
+  const dx = (e.clientX - drag.x) * k, dy = (e.clientY - drag.y) * k;
+  drag.x = e.clientX; drag.y = e.clientY;
+  drag.moved += Math.abs(dx) + Math.abs(dy); drag.ax += dx; drag.ay += dy;
+  if (drag.moved > 6) {
+    const ix = Math.trunc(drag.ax), iy = Math.trunc(drag.ay);
+    if (ix || iy) { moveAim(ix, iy); drag.ax -= ix; drag.ay -= iy; }
+  }
+});
+oc.addEventListener('pointerup', e => {
+  if (!drag) return;
+  if (drag.moved <= 6) {
+    const r = oc.getBoundingClientRect();
+    const mx = (e.clientX - r.left) * 300 / r.width - 150, my = (e.clientY - r.top) * 300 / r.height - 150;
+    const jitter = SCN.p.level === 1 ? 0 : 6;
+    moveAim(-mx + Math.round((Math.random() - 0.5) * 2 * jitter), -my + Math.round((Math.random() - 0.5) * 2 * jitter));
+  }
+  drag = null; save();
+});
+oc.addEventListener('pointercancel', () => { drag = null; });
+$('#ocular').addEventListener('keydown', e => {
+  const st = e.shiftKey ? 10 : 1;
+  const map = { ArrowLeft: [st, 0], ArrowRight: [-st, 0], ArrowUp: [0, st], ArrowDown: [0, -st] };
+  if (map[e.key]) { e.preventDefault(); moveAim(...map[e.key]); }
+  else if (e.key === 'Enter') { e.preventDefault(); doRec(); }
+  else if (e.key === 'd' || e.key === 'D') doDist();
+  else if (e.key === 'f' || e.key === 'F') doFlip();
+});
+// Vis de fin pointé : un appui = un pas ; appui long = mouvement continu
+let holdT = null, holdI = null;
+const stepPx = e => (S.coarse || e.shiftKey ? 10 : 1);
+const nudge = (dir, st) => moveAim(...{ L: [st, 0], R: [-st, 0], U: [0, st], D: [0, -st] }[dir]);
+function stopHold() { if (holdT || holdI) save(); clearTimeout(holdT); clearInterval(holdI); holdT = holdI = null; }
+$$('[data-mv]').forEach(b => {
+  b.addEventListener('pointerdown', e => {
+    e.preventDefault(); stopHold();
+    const st = stepPx(e); nudge(b.dataset.mv, st);
+    holdT = setTimeout(() => { holdI = setInterval(() => nudge(b.dataset.mv, st), 70); }, 350);
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(t => b.addEventListener(t, stopHold));
+  b.addEventListener('click', e => { if (e.detail === 0) { nudge(b.dataset.mv, stepPx(e)); save(); } }); // clavier
+  b.addEventListener('contextmenu', e => e.preventDefault());
+});
+$('#btnPas').addEventListener('click', () => {
+  S.coarse = !S.coarse;
+  $('#btnPas').setAttribute('aria-pressed', S.coarse);
+  $('#btnPas').textContent = S.coarse ? 'Pas rapide : 2,5 mgon' : 'Pas fin : 0,25 mgon';
+  save();
+});
+$('#kDist').addEventListener('click', doDist);
+$('#kRec').addEventListener('click', doRec);
+$('#kFace').addEventListener('click', doFlip);
+$$('.targets button').forEach(b => b.addEventListener('click', () => { S.target = b.dataset.tg; renderTerrain(); drawMap(); save(); }));
+$('#btnPrevSt').addEventListener('click', () => gotoStation(S.st - 1));
+$('#btnNextSt').addEventListener('click', () => { if (S.st === SCN.n) { if (EXP) showStep(2); else toast('Il manque des lectures à d\'autres stations (voir le carnet).', 'bad'); } else gotoStation(S.st + 1); });
+$('#carnet').addEventListener('click', e => { const tr = e.target.closest('tr[data-st]'); if (tr) gotoStation(+tr.dataset.st); });
+$('#btnAuto').addEventListener('click', autoFill);
+$('#btnCopyCarnet').addEventListener('click', () => copyText(carnetTSV(), 'Carnet copié : collez-le dans un tableur.'));
+
+// Champs de calcul (délégation sur la zone de travail)
+const work = $('#work');
+work.addEventListener('input', e => {
+  const id = e.target.dataset?.f; if (!id) return;
+  fs(id).v = e.target.value;
+  refreshLive(); drawMap(); renderClosure(); save();
+});
+work.addEventListener('change', e => {
+  const id = e.target.dataset?.f; if (!id || !isLearn()) return;
+  const f = fs(id);
+  if (!f.v.trim()) { f.ok = null; paintField(id); return; }
+  if (f.rev) { f.ok = check(id); paintField(id); save(); return; }  // champ déjà corrigé : 0 point quoi qu'il arrive
+  f.tries++; f.ok = check(id);
+  if (f.ok === null) toast('Saisie illisible : utilisez un nombre (virgule ou point).', 'bad');
+  else if (f.ok) { if (f.tries === 1) f.first = true; streak++; if (streak > 0 && streak % 5 === 0) toast(`Série de ${streak} réponses justes !`, 'ok'); }
+  else { streak = 0; }
+  paintField(id); renderHeader(); renderStepper(); renderClosure(); save();
+});
+work.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || !e.target.dataset?.f) return;
+  e.preventDefault();
+  const all = $$('#step' + S.step + ' .fld:not(:disabled)'), i = all.indexOf(e.target);
+  if (all[i + 1]) all[i + 1].focus(); else e.target.blur();
+});
+let armTimer = null;
+work.addEventListener('click', e => {
+  const pmb = e.target.closest('[data-pm]');
+  if (pmb) { // inversion du signe d'un champ
+    const inp = document.getElementById('f_' + pmb.dataset.pm); if (!inp || inp.disabled) return;
+    const v = inp.value.trim();
+    inp.value = v.startsWith('-') ? v.slice(1) : '-' + v;
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    if (v.replace('-', '')) inp.dispatchEvent(new Event('change', { bubbles: true }));
+    else inp.focus();
+    return;
+  }
+  const rv = e.target.closest('[data-reveal]');
+  if (rv) {
+    const id = rv.dataset.reveal, f = fs(id), d = DEF[id];
+    f.v = fmt(EXP[id], KINDS[d.kind].dec); f.rev = true; f.ok = true;
+    const inp = document.getElementById('f_' + id); if (inp) inp.value = f.v;
+    paintField(id); refreshLive(); renderHeader(); renderStepper(); drawMap(); renderClosure(); save();
+    return;
+  }
+  const b = e.target.closest('button[data-act]'); if (!b) return;
+  const act = b.dataset.act;
+  if (act === 'next') showStep(S.step + 1);
+  if (act === 'check') {
+    const ds = DEFS.filter(d => d.step === S.step); let ok = 0, bad = 0, empty = 0;
+    ds.forEach(d => { const f = fs(d.id); if (!f.v.trim()) { empty++; return; } if (!f.rev && f.ok == null) { f.tries++; f.ok = check(d.id); if (f.ok && f.tries === 1) f.first = true; } f.ok ? ok++ : bad++; paintField(d.id); });
+    toast(`${ok} juste(s), ${bad} faux, ${empty} vide(s) sur ${ds.length}.`, bad ? 'bad' : 'ok');
+    renderHeader(); renderStepper(); save();
+  }
+  if (act === 'reveal') {
+    if (b.classList.contains('armed')) { clearTimeout(armTimer); revealStep(S.step); return; }
+    b.classList.add('armed'); b.textContent = 'Confirmer : les champs corrigés ne rapporteront aucun point';
+    armTimer = setTimeout(() => { b.classList.remove('armed'); b.textContent = 'Afficher la correction de l\'étape'; }, 4000);
+  }
+  if (act === 'submit') {
+    if (!b.classList.contains('armed')) { b.classList.add('armed'); b.textContent = 'Confirmer la remise (définitif)'; return; }
+    for (const d of DEFS) { const f = fs(d.id); f.ok = check(d.id) === true; }
+    S.submitted = true; renderHeader(); renderStepper(); showStep(6); renderClosure();
+    toast(`Copie remise · note ${fmt(noteSur20(), 1)} / 20`, 'ok');
+  }
+  if (act === 'copyReport') copyText(reportText(), 'Rapport copié.');
+  if (act === 'newEx') showStep(0);
+});
+
+// Scénario
+$$('input[name="ptype"]').forEach(r => r.addEventListener('change', () => {
+  syncTypeUI(); $('#pCount').value = radioVal('ptype') === 'F' ? 5 : 3;
+}));
+$('#btnRandom').addEventListener('click', () => { const seed = Math.floor(Math.random() * 99999) + 1; $('#pSeed').value = seed; newScenario({ ...readForm(), seed }); });
+$('#btnSeed').addEventListener('click', () => newScenario(readForm()));
+$('#btnCopyCode').addEventListener('click', () => copyText(makeCode(SCN.p), 'Code copié.'));
+$('#btnLoadCode').addEventListener('click', () => {
+  const p = parseCode($('#inCode').value);
+  if (!p) { $('#codeMsg').textContent = 'Code non reconnu. Format attendu : F5-2-A-48213 (type + nombre, niveau, A/X, graine).'; return; }
+  newScenario(p);
+});
+$('#inCode').addEventListener('keydown', e => { if (e.key === 'Enter') $('#btnLoadCode').click(); });
+$('#btnManual').addEventListener('click', launchManual);
+
+// Panneau coulissant « Plan et données » (mobile et tablette)
+function setSheet(open) {
+  document.body.classList.toggle('sheet', open);
+  $('#backdrop').hidden = !open;
+  $('#fabPlan').setAttribute('aria-expanded', open);
+  if (open) { requestAnimationFrame(drawMap); $('#sheetClose').focus({ preventScroll: true }); }
+}
+$('#fabPlan').addEventListener('click', () => setSheet(!document.body.classList.contains('sheet')));
+$('#sheetClose').addEventListener('click', () => setSheet(false));
+$('#backdrop').addEventListener('click', () => setSheet(false));
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.body.classList.contains('sheet')) setSheet(false); });
+window.matchMedia('(min-width:1081px)').addEventListener('change', m => { if (m.matches) setSheet(false); });
+
+// Carte : redessin au redimensionnement et au changement de thème
+new ResizeObserver(() => drawMap()).observe($('#map').parentElement);
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => drawMap());
+new MutationObserver(() => drawMap()).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+/* =====================================================================
+   12. DÉMARRAGE : reprise de la séance précédente ou exercice d'exemple
+   ===================================================================== */
+if (load()) {
+  renderKnown(); renderHeader(); renderClosure(); showStep(S.step);
+} else {
+  SCN = genScenario({ type: 'F', count: 5, level: 2, mode: 'learn', seed: 48213 });
+  S = freshState(SCN.p); buildDefs();
+  renderKnown(); renderHeader(); renderClosure(); showStep(1);
+}
+</script>
+
+</body></html>
